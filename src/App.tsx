@@ -1,0 +1,1897 @@
+// @ts-nocheck
+import { useEffect, useState } from "react";
+import type { CSSProperties, Dispatch, SetStateAction } from "react";
+
+// ─── Palette & helpers ────────────────────────────────────────────────────────
+const COLORS = {
+  bg: "#FFF6F2",
+  card: "#FFFFFF",
+  primary: "#E8735A",
+  secondary: "#F4A88A",
+  accent: "#D45B42",
+  soft: "#FDE8E0",
+  muted: "#9B7B72",
+  text: "#3D2218",
+  light: "#FFF0EA",
+  green: "#68AE7E",
+  blue: "#6898B8",
+  yellow: "#EEB848",
+  purple: "#A48FC0",
+  danger: "#D9534F",
+};
+
+// Gradient presets for buttons (keyed by flat color)
+const BTN_GRADIENTS: Record<string, string> = {
+  [COLORS.primary]:   "linear-gradient(140deg, #EE8068 0%, #DF6A50 100%)",
+  [COLORS.secondary]: "linear-gradient(140deg, #F8B898 0%, #EFA070 100%)",
+  [COLORS.green]:     "linear-gradient(140deg, #7AC28E 0%, #58A070 100%)",
+  [COLORS.blue]:      "linear-gradient(140deg, #7AAAC8 0%, #5888B0 100%)",
+  [COLORS.yellow]:    "linear-gradient(140deg, #F8CC68 0%, #E4A830 100%)",
+  [COLORS.purple]:    "linear-gradient(140deg, #BCA8D8 0%, #9880B8 100%)",
+  [COLORS.danger]:    "linear-gradient(140deg, #E86868 0%, #C84040 100%)",
+  [COLORS.muted]:     "linear-gradient(140deg, #B09088 0%, #9B7B72 100%)",
+  [COLORS.accent]:    "linear-gradient(140deg, #DC7060 0%, #C85040 100%)",
+};
+
+type TabId =
+  | "diary"
+  | "checkin"
+  | "schedule"
+  | "shopping"
+  | "reminder"
+  | "whisper"
+  | "jokes"
+  | "calendar"
+  | "wishes";
+
+const TABS: { id: TabId; icon: string; label: string }[] = [
+  { id: "diary",    icon: "📖", label: "心情日记" },
+  { id: "checkin",  icon: "✅", label: "打卡" },
+  { id: "schedule", icon: "🗓", label: "本周计划" },
+  { id: "shopping", icon: "🛒", label: "购物清单" },
+  { id: "reminder", icon: "🔔", label: "提醒他" },
+  { id: "whisper",  icon: "💌", label: "悄悄话" },
+  { id: "jokes",    icon: "😂", label: "笑话库" },
+  { id: "calendar", icon: "📅", label: "日历" },
+  { id: "wishes",   icon: "✨", label: "愿望清单" },
+];
+
+const today = () => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const toLocalDate = (dateStr: string) => {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y || 2000, (m || 1) - 1, d || 1);
+};
+
+const fmtDate = (d: string) =>
+  toLocalDate(d).toLocaleDateString("zh-CN", {
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  });
+
+const uid = () => Math.random().toString(36).slice(2, 10);
+const now = () => Date.now();
+
+const confirmDelete = () => window.confirm("确定要删除吗？删除后不能恢复。");
+
+type Setter<T> = Dispatch<SetStateAction<T>>;
+
+type BaseItem = {
+  id: string;
+  createdAt: number;
+  updatedAt?: number;
+};
+
+type DiaryEntry = BaseItem & {
+  date: string;
+  mood: string;
+  title: string;
+  content: string;
+};
+
+type JokeEntry = BaseItem & {
+  date: string;
+  setup: string;
+  punchline: string;
+  tags: string;
+};
+
+type CalendarNote = BaseItem & {
+  text: string;
+};
+
+type CalendarData = Record<string, CalendarNote[]>;
+
+type WhisperEntry = BaseItem & {
+  date: string;
+  to: string;
+  content: string;
+  emoji: string;
+};
+
+type WishEntry = BaseItem & {
+  date: string;
+  wish: string;
+  deadline: string;
+  priority: string;
+  done: boolean;
+};
+
+type ScheduleEntry = BaseItem & {
+  day: string;
+  period?: string;
+  time: string;
+  event: string;
+  who: string;
+  sortOrder?: number;
+};
+
+type ReminderEntry = BaseItem & {
+  content: string;
+  urgency: string;
+  date: string;
+  done: boolean;
+};
+
+type ShoppingEntry = BaseItem & {
+  name: string;
+  quantity: string;
+  category: string;
+  note: string;
+  bought: boolean;
+};
+
+type CheckinEntry = BaseItem & {
+  name: string;
+  lastCheckinDate?: string;
+  currentStreak: number;
+  longestStreak: number;
+  totalCheckins: number;
+  history: string[];
+};
+
+// ─── localStorage hook (unchanged) ───────────────────────────────────────────
+function useLocalStorage<T>(key: string, initialValue: T) {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      return saved ? (JSON.parse(saved) as T) : initialValue;
+    } catch {
+      return initialValue;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      alert("本地存储空间可能满了。照片太多时，建议删除一些旧照片。");
+    }
+  }, [key, value]);
+
+  return [value, setValue] as const;
+}
+
+// ─── Shared UI ────────────────────────────────────────────────────────────────
+const GlobalStyle = () => (
+  <style>{`
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body, #root {
+      margin: 0;
+      min-height: 100%;
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
+      background: ${COLORS.bg};
+    }
+
+    body {
+      font-size: 17px;
+      -webkit-text-size-adjust: 100%;
+      touch-action: manipulation;
+    }
+
+    button, input, textarea {
+      font: inherit;
+    }
+
+    ::selection {
+      background: rgba(232, 115, 90, .22);
+      color: #3D2218;
+    }
+
+    img {
+      max-width: 100%;
+      display: block;
+    }
+
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { scrollbar-width: none; }
+
+    /* Input focus glow */
+    .diary-input:focus {
+      border-color: ${COLORS.primary} !important;
+      box-shadow: 0 0 0 3px rgba(232, 115, 90, .16) !important;
+      background: #fff !important;
+      outline: none;
+    }
+
+    /* Button press feedback */
+    .diary-btn {
+      transition: opacity .15s ease, transform .12s ease, box-shadow .15s ease !important;
+    }
+    .diary-btn:active {
+      transform: scale(.95) !important;
+      opacity: .88;
+    }
+    .diary-btn:hover {
+      opacity: .92;
+    }
+
+    /* Tab button */
+    .diary-tab {
+      transition: background .2s ease, color .2s ease, box-shadow .2s ease !important;
+    }
+    .diary-tab:active {
+      transform: scale(.92);
+    }
+
+    /* Empty state float */
+    @keyframes diary-float {
+      0%, 100% { transform: translateY(0px); }
+      50%       { transform: translateY(-10px); }
+    }
+    .diary-float {
+      animation: diary-float 3.2s ease-in-out infinite;
+      display: inline-block;
+    }
+
+    /* Tab content fade-in */
+    @keyframes diary-fadein {
+      from { opacity: 0; transform: translateY(7px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .diary-fadein {
+      animation: diary-fadein .28s ease forwards;
+    }
+
+    /* Checkin streak pulse */
+    @keyframes diary-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(104, 174, 126, .45); }
+      55%       { box-shadow: 0 0 0 9px rgba(104, 174, 126, 0); }
+    }
+    .diary-pulse {
+      animation: diary-pulse 2.2s ease-in-out infinite;
+    }
+  `}</style>
+);
+
+const Card = ({
+  children,
+  style = {},
+}: {
+  children: React.ReactNode;
+  style?: CSSProperties;
+}) => (
+  <div
+    style={{
+      background: "linear-gradient(175deg, #ffffff 0%, #fffcfb 100%)",
+      borderRadius: 22,
+      padding: "18px 20px",
+      boxShadow:
+        "0 1px 2px rgba(61,34,24,.04), 0 4px 16px rgba(61,34,24,.09), 0 0 0 1px rgba(240,190,170,.18)",
+      marginBottom: 14,
+      width: "100%",
+      maxWidth: "100%",
+      overflow: "hidden",
+      ...style,
+    }}
+  >
+    {children}
+  </div>
+);
+
+const Btn = ({
+  onClick,
+  children,
+  color = COLORS.primary,
+  small = false,
+  outline = false,
+  style = {},
+  type = "button",
+}: {
+  onClick?: () => void;
+  children: React.ReactNode;
+  color?: string;
+  small?: boolean;
+  outline?: boolean;
+  style?: CSSProperties;
+  type?: "button" | "submit";
+}) => (
+  <button
+    type={type}
+    onClick={onClick}
+    className="diary-btn"
+    style={{
+      background: outline ? "transparent" : (BTN_GRADIENTS[color] ?? color),
+      color: outline ? color : "#fff",
+      border: outline ? `1.5px solid ${color}` : "none",
+      borderRadius: 999,
+      padding: small ? "7px 16px" : "11px 24px",
+      fontSize: small ? 14 : 16,
+      fontWeight: 700,
+      cursor: "pointer",
+      fontFamily: "inherit",
+      whiteSpace: "nowrap",
+      maxWidth: "100%",
+      letterSpacing: 0.3,
+      boxShadow: outline ? "none" : "0 2px 10px rgba(0,0,0,.14)",
+      ...style,
+    }}
+  >
+    {children}
+  </button>
+);
+
+const Input = ({
+  value,
+  onChange,
+  placeholder,
+  multiline = false,
+  rows = 3,
+  style = {},
+  type = "text",
+}: {
+  value: string | number;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  multiline?: boolean;
+  rows?: number;
+  style?: CSSProperties;
+  type?: string;
+}) => {
+  const base: CSSProperties = {
+    width: "100%",
+    maxWidth: "100%",
+    borderRadius: 14,
+    border: `1.5px solid rgba(240, 195, 175, .75)`,
+    padding: "12px 15px",
+    fontSize: 16,
+    fontFamily: "inherit",
+    background: "rgba(255, 245, 240, .65)",
+    color: COLORS.text,
+    outline: "none",
+    resize: "vertical",
+    boxSizing: "border-box",
+    transition: "border-color .2s, box-shadow .2s, background .2s",
+    ...style,
+  };
+
+  return multiline ? (
+    <textarea
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      rows={rows}
+      className="diary-input"
+      style={base}
+    />
+  ) : (
+    <input
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className="diary-input"
+      style={{ ...base, resize: undefined }}
+    />
+  );
+};
+
+const Tag = ({
+  color = COLORS.soft,
+  children,
+}: {
+  color?: string;
+  children: React.ReactNode;
+}) => (
+  <span
+    style={{
+      background: color,
+      color: COLORS.accent,
+      borderRadius: 999,
+      padding: "3px 11px",
+      fontSize: 12,
+      fontWeight: 700,
+      display: "inline-flex",
+      alignItems: "center",
+      maxWidth: "100%",
+      letterSpacing: 0.2,
+      border: "1px solid rgba(255,255,255,.65)",
+    }}
+  >
+    {children}
+  </span>
+);
+
+const EmptyState = ({ emoji, text }: { emoji: string; text: string }) => (
+  <div style={{ textAlign: "center", padding: "52px 18px", color: COLORS.muted }}>
+    <div className="diary-float" style={{ fontSize: 50, marginBottom: 16 }}>{emoji}</div>
+    <div style={{ fontSize: 15, lineHeight: 1.9, maxWidth: 240, margin: "0 auto" }}>{text}</div>
+  </div>
+);
+
+const ActionButtons = ({
+  onEdit,
+  onDelete,
+}: {
+  onEdit: () => void;
+  onDelete: () => void;
+}) => (
+  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+    <Btn small outline color={COLORS.blue} onClick={onEdit}>编辑</Btn>
+    <Btn small outline color={COLORS.danger} onClick={onDelete}>删除</Btn>
+  </div>
+);
+
+const FormActions = ({
+  onSave,
+  onCancel,
+  saveText = "保存",
+  color = COLORS.primary,
+}: {
+  onSave: () => void;
+  onCancel: () => void;
+  saveText?: string;
+  color?: string;
+}) => (
+  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+    <Btn onClick={onSave} color={color}>{saveText}</Btn>
+    <Btn onClick={onCancel} outline color={COLORS.muted}>取消</Btn>
+  </div>
+);
+
+// ─── Mood Diary ───────────────────────────────────────────────────────────────
+const MOODS = ["😊", "😍", "😢", "😤", "😌", "🥳", "😴", "😰"];
+
+type DiaryForm = Omit<DiaryEntry, keyof BaseItem>;
+
+function DiaryFields({
+  form,
+  setForm,
+}: {
+  form: DiaryForm;
+  setForm: Setter<DiaryForm>;
+}) {
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <Input
+          type="date"
+          value={form.date}
+          onChange={(v) => setForm((p) => ({ ...p, date: v }))}
+          style={{ width: 170 }}
+        />
+        <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
+          {MOODS.map((m) => (
+            <span
+              key={m}
+              onClick={() => setForm((p) => ({ ...p, mood: m }))}
+              style={{
+                fontSize: 25,
+                cursor: "pointer",
+                opacity: form.mood === m ? 1 : 0.35,
+                transition: "opacity .15s, transform .15s",
+                transform: form.mood === m ? "scale(1.18)" : "scale(1)",
+                display: "inline-block",
+              }}
+            >
+              {m}
+            </span>
+          ))}
+        </div>
+      </div>
+      <Input
+        value={form.title}
+        onChange={(v) => setForm((p) => ({ ...p, title: v }))}
+        placeholder="标题（今天发生了什么？）"
+        style={{ marginBottom: 10 }}
+      />
+      <Input
+        value={form.content}
+        onChange={(v) => setForm((p) => ({ ...p, content: v }))}
+        placeholder="详细说说～"
+        multiline
+        rows={4}
+        style={{ marginBottom: 12 }}
+      />
+    </>
+  );
+}
+
+function DiaryTab({ data, setData }: { data: DiaryEntry[]; setData: Setter<DiaryEntry[]> }) {
+  const blank: DiaryForm = { date: today(), mood: "😊", title: "", content: "" };
+  const [form, setForm] = useState<DiaryForm>(blank);
+  const [adding, setAdding] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<DiaryForm>(blank);
+
+  const sorted = [...data].sort(
+    (a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt
+  );
+
+  const save = () => {
+    if (!form.title.trim()) return;
+    setData((prev) => [{ id: uid(), createdAt: now(), ...form }, ...prev]);
+    setForm(blank);
+    setAdding(false);
+  };
+
+  const saveEdit = () => {
+    if (!editForm.title.trim() || !editId) return;
+    setData((prev) =>
+      prev.map((entry) =>
+        entry.id === editId ? { ...entry, ...editForm, updatedAt: now() } : entry
+      )
+    );
+    setEditId(null);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>心情日记 📖</h2>
+        <Btn onClick={() => setAdding(!adding)} small>
+          {adding ? "取消" : "+ 写日记"}
+        </Btn>
+      </div>
+
+      {adding && (
+        <Card style={{ border: `2px solid ${COLORS.secondary}` }}>
+          <DiaryFields form={form} setForm={setForm} />
+          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="保存这篇日记 💕" />
+        </Card>
+      )}
+
+      {sorted.length === 0 && !adding && <EmptyState emoji="📖" text="还没有日记，快记录第一篇吧～" />}
+
+      {sorted.map((entry) => (
+        <Card key={entry.id}>
+          {editId === entry.id ? (
+            <>
+              <DiaryFields form={editForm} setForm={setEditForm} />
+              <FormActions onSave={saveEdit} onCancel={() => setEditId(null)} saveText="保存修改" />
+            </>
+          ) : (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ minWidth: 0 }}>
+                  <span style={{ fontSize: 30, marginRight: 8 }}>{entry.mood}</span>
+                  <strong style={{ color: COLORS.text, fontSize: 18, wordBreak: "break-word" }}>{entry.title}</strong>
+                </div>
+                <Tag>{fmtDate(entry.date)}</Tag>
+              </div>
+              {entry.content && (
+                <p style={{ margin: "12px 0", color: COLORS.muted, fontSize: 16, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>
+                  {entry.content}
+                </p>
+              )}
+              <ActionButtons
+                onEdit={() => {
+                  setEditId(entry.id);
+                  setEditForm({ date: entry.date, mood: entry.mood, title: entry.title, content: entry.content });
+                }}
+                onDelete={() => {
+                  if (confirmDelete()) setData((prev) => prev.filter((x) => x.id !== entry.id));
+                }}
+              />
+            </>
+          )}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ─── Jokes ────────────────────────────────────────────────────────────────────
+type JokeForm = Omit<JokeEntry, keyof BaseItem>;
+
+function JokesTab({ data, setData }: { data: JokeEntry[]; setData: Setter<JokeEntry[]> }) {
+  const blank: JokeForm = { date: today(), setup: "", punchline: "", tags: "" };
+  const [form, setForm] = useState<JokeForm>(blank);
+  const [adding, setAdding] = useState(false);
+  const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<JokeForm>(blank);
+
+  const save = () => {
+    if (!form.setup.trim()) return;
+    setData((prev) => [{ id: uid(), createdAt: now(), ...form }, ...prev]);
+    setForm(blank);
+    setAdding(false);
+  };
+
+  const saveEdit = () => {
+    if (!editId || !editForm.setup.trim()) return;
+    setData((prev) =>
+      prev.map((j) => (j.id === editId ? { ...j, ...editForm, updatedAt: now() } : j))
+    );
+    setEditId(null);
+  };
+
+  const Fields = ({ value, setValue }: { value: JokeForm; setValue: Setter<JokeForm> }) => (
+    <>
+      <Input type="date" value={value.date} onChange={(v) => setValue((p) => ({ ...p, date: v }))} style={{ marginBottom: 10, width: 170 }} />
+      <Input value={value.setup} onChange={(v) => setValue((p) => ({ ...p, setup: v }))} placeholder="笑话梗/起因" style={{ marginBottom: 10 }} />
+      <Input value={value.punchline} onChange={(v) => setValue((p) => ({ ...p, punchline: v }))} placeholder="笑点/结果（可选）" style={{ marginBottom: 10 }} />
+      <Input value={value.tags} onChange={(v) => setValue((p) => ({ ...p, tags: v }))} placeholder="标签，如：冷笑话, 睡前笑话" style={{ marginBottom: 12 }} />
+    </>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>笑话库 😂</h2>
+        <Btn onClick={() => setAdding(!adding)} small>
+          {adding ? "取消" : "+ 记笑话"}
+        </Btn>
+      </div>
+
+      {adding && (
+        <Card style={{ border: `2px solid ${COLORS.yellow}` }}>
+          {Fields({ value: form, setValue: setForm })}
+          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="收进笑话库 😄" color={COLORS.yellow} />
+        </Card>
+      )}
+
+      {data.length === 0 && !adding && <EmptyState emoji="😂" text="还没有笑话，赶紧记下你们的专属笑点吧！" />}
+
+      {data.map((joke) => (
+        <Card key={joke.id} style={{ borderLeft: `4px solid ${COLORS.yellow}` }}>
+          {editId === joke.id ? (
+            <>
+              {Fields({ value: editForm, setValue: setEditForm })}
+              <FormActions onSave={saveEdit} onCancel={() => setEditId(null)} saveText="保存修改" color={COLORS.yellow} />
+            </>
+          ) : (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                <Tag color="#FFF8DC">{fmtDate(joke.date)}</Tag>
+                {joke.tags && <span style={{ fontSize: 13, color: COLORS.muted }}>#{joke.tags.split(",").map((t) => t.trim()).filter(Boolean).join(" #")}</span>}
+              </div>
+              <p style={{ margin: "0 0 10px", color: COLORS.text, fontSize: 17, fontWeight: 700, wordBreak: "break-word" }}>{joke.setup}</p>
+              {joke.punchline &&
+                (revealed[joke.id] ? (
+                  <p style={{ margin: "0 0 12px", color: COLORS.accent, fontSize: 16, fontStyle: "italic" }}>👉 {joke.punchline}</p>
+                ) : (
+                  <div style={{ marginBottom: 12 }}>
+                    <Btn onClick={() => setRevealed((p) => ({ ...p, [joke.id]: true }))} small outline color={COLORS.yellow} style={{ color: COLORS.text }}>
+                      揭晓笑点 🎉
+                    </Btn>
+                  </div>
+                ))}
+              <ActionButtons
+                onEdit={() => {
+                  setEditId(joke.id);
+                  setEditForm({ date: joke.date, setup: joke.setup, punchline: joke.punchline, tags: joke.tags });
+                }}
+                onDelete={() => {
+                  if (confirmDelete()) setData((prev) => prev.filter((x) => x.id !== joke.id));
+                }}
+              />
+            </>
+          )}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ─── Calendar ─────────────────────────────────────────────────────────────────
+function CalendarTab({ data, setData }: { data: CalendarData; setData: Setter<CalendarData> }) {
+  const [selected, setSelected] = useState(today());
+  const [note, setNote] = useState("");
+  const [viewDate, setViewDate] = useState(new Date());
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthNames = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
+
+  const dateKey = (y: number, m: number, d: number) =>
+    `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+
+  const saveNote = () => {
+    if (!note.trim()) return;
+    setData((prev) => ({
+      ...prev,
+      [selected]: [{ id: uid(), text: note.trim(), createdAt: now() }, ...(prev[selected] || [])],
+    }));
+    setNote("");
+  };
+
+  const saveEdit = () => {
+    if (!editId || !editText.trim()) return;
+    setData((prev) => ({
+      ...prev,
+      [selected]: (prev[selected] || []).map((n) =>
+        n.id === editId ? { ...n, text: editText.trim(), updatedAt: now() } : n
+      ),
+    }));
+    setEditId(null);
+  };
+
+  const deleteNote = (id: string) => {
+    if (!confirmDelete()) return;
+    setData((prev) => ({
+      ...prev,
+      [selected]: (prev[selected] || []).filter((n) => n.id !== id),
+    }));
+  };
+
+  const selectedNotes = data[selected] || [];
+
+  return (
+    <div>
+      <h2 style={{ margin: "0 0 18px", color: COLORS.text, fontSize: 23, fontWeight: 900 }}>日历记录 📅</h2>
+
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <button
+            onClick={() => setViewDate(new Date(year, month - 1))}
+            style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: COLORS.muted, padding: "0 6px" }}
+          >‹</button>
+          <strong style={{ color: COLORS.text, fontSize: 18 }}>{year}年 {monthNames[month]}</strong>
+          <button
+            onClick={() => setViewDate(new Date(year, month + 1))}
+            style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: COLORS.muted, padding: "0 6px" }}
+          >›</button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 4, textAlign: "center" }}>
+          {["日","一","二","三","四","五","六"].map((d) => (
+            <div key={d} style={{ fontSize: 13, color: COLORS.muted, fontWeight: 800, paddingBottom: 6 }}>{d}</div>
+          ))}
+
+          {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
+
+          {Array.from({ length: daysInMonth }).map((_, i) => {
+            const d = i + 1;
+            const key = dateKey(year, month, d);
+            const hasNote = data[key]?.length > 0;
+            const isSelected = key === selected;
+            const isToday = key === today();
+
+            return (
+              <div
+                key={d}
+                onClick={() => setSelected(key)}
+                style={{
+                  padding: "9px 3px",
+                  borderRadius: 11,
+                  cursor: "pointer",
+                  background: isSelected
+                    ? BTN_GRADIENTS[COLORS.primary]
+                    : isToday
+                    ? COLORS.soft
+                    : "transparent",
+                  color: isSelected ? "#fff" : COLORS.text,
+                  fontWeight: isToday ? 900 : 500,
+                  position: "relative",
+                  minWidth: 0,
+                  transition: "background .15s",
+                }}
+              >
+                {d}
+                {hasNote && (
+                  <div style={{
+                    position: "absolute",
+                    bottom: 2,
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    width: 5,
+                    height: 5,
+                    borderRadius: "50%",
+                    background: isSelected ? "#fff" : COLORS.secondary,
+                  }} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      <Card>
+        <div style={{ fontWeight: 900, color: COLORS.text, marginBottom: 12 }}>{fmtDate(selected)} 的记录</div>
+        <Input value={note} onChange={setNote} placeholder="记下今天发生的事…" style={{ marginBottom: 10 }} />
+        <Btn onClick={saveNote} small>添加记录</Btn>
+
+        {selectedNotes.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            {selectedNotes.map((n) => (
+              <div key={n.id} style={{ padding: "10px 12px", background: COLORS.light, borderRadius: 12, marginBottom: 8, fontSize: 15, color: COLORS.text }}>
+                {editId === n.id ? (
+                  <>
+                    <Input value={editText} onChange={setEditText} placeholder="修改记录" style={{ marginBottom: 10 }} />
+                    <FormActions onSave={saveEdit} onCancel={() => setEditId(null)} saveText="保存" />
+                  </>
+                ) : (
+                  <>
+                    <div style={{ marginBottom: 10, wordBreak: "break-word" }}>• {n.text}</div>
+                    <ActionButtons
+                      onEdit={() => { setEditId(n.id); setEditText(n.text); }}
+                      onDelete={() => deleteNote(n.id)}
+                    />
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ─── Whisper ──────────────────────────────────────────────────────────────────
+function WhisperTab({ data, setData }: { data: WhisperEntry[]; setData: Setter<WhisperEntry[]> }) {
+  const blank = { to: "TA", content: "", emoji: "💌" };
+  const [form, setForm] = useState(blank);
+  const [adding, setAdding] = useState(false);
+  const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState(blank);
+
+  const EMOJIS = ["💌", "😘", "🫶", "💕", "🥺", "😳", "💋", "🤫"];
+
+  const save = () => {
+    if (!form.content.trim()) return;
+    setData((prev) => [{ id: uid(), createdAt: now(), date: today(), ...form }, ...prev]);
+    setForm(blank);
+    setAdding(false);
+  };
+
+  const saveEdit = () => {
+    if (!editId || !editForm.content.trim()) return;
+    setData((prev) =>
+      prev.map((m) => (m.id === editId ? { ...m, ...editForm, updatedAt: now() } : m))
+    );
+    setEditId(null);
+  };
+
+  const Fields = ({ value, setValue }: { value: typeof blank; setValue: Setter<typeof blank> }) => (
+    <>
+      <div style={{ display: "flex", gap: 7, marginBottom: 12, flexWrap: "wrap" }}>
+        {EMOJIS.map((e) => (
+          <span
+            key={e}
+            onClick={() => setValue((p) => ({ ...p, emoji: e }))}
+            style={{
+              fontSize: 25,
+              cursor: "pointer",
+              opacity: value.emoji === e ? 1 : 0.35,
+              transform: value.emoji === e ? "scale(1.18)" : "scale(1)",
+              transition: "opacity .15s, transform .15s",
+              display: "inline-block",
+            }}
+          >
+            {e}
+          </span>
+        ))}
+      </div>
+      <Input
+        value={value.content}
+        onChange={(v) => setValue((p) => ({ ...p, content: v }))}
+        placeholder="想对TA说的悄悄话…"
+        multiline
+        rows={4}
+        style={{ marginBottom: 12 }}
+      />
+    </>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>悄悄话 💌</h2>
+        <Btn onClick={() => setAdding(!adding)} small color={COLORS.purple}>
+          {adding ? "取消" : "+ 写悄悄话"}
+        </Btn>
+      </div>
+
+      {adding && (
+        <Card style={{ border: `2px solid ${COLORS.purple}` }}>
+          {Fields({ value: form, setValue: setForm })}
+          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="偷偷放进信箱 🤫" color={COLORS.purple} />
+        </Card>
+      )}
+
+      {data.length === 0 && !adding && <EmptyState emoji="💌" text="还没有悄悄话，写下只属于你们的秘密吧～" />}
+
+      {data.map((msg) => (
+        <Card key={msg.id} style={{ borderLeft: `4px solid ${COLORS.purple}` }}>
+          {editId === msg.id ? (
+            <>
+              {Fields({ value: editForm, setValue: setEditForm })}
+              <FormActions onSave={saveEdit} onCancel={() => setEditId(null)} saveText="保存修改" color={COLORS.purple} />
+            </>
+          ) : (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <span style={{ fontSize: 26 }}>{msg.emoji}</span>
+                <Tag color="#F3EEFF">{fmtDate(msg.date)}</Tag>
+              </div>
+
+              {revealed[msg.id] ? (
+                <p style={{ margin: "0 0 12px", color: COLORS.text, fontSize: 16, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{msg.content}</p>
+              ) : (
+                <div style={{ textAlign: "center", marginBottom: 12 }}>
+                  <div style={{ filter: "blur(8px)", color: COLORS.muted, fontSize: 16, marginBottom: 8, pointerEvents: "none", userSelect: "none" }}>
+                    这是一条悄悄话…
+                  </div>
+                  <Btn onClick={() => setRevealed((p) => ({ ...p, [msg.id]: true }))} small color={COLORS.purple}>
+                    轻轻打开 💫
+                  </Btn>
+                </div>
+              )}
+
+              <ActionButtons
+                onEdit={() => {
+                  setEditId(msg.id);
+                  setEditForm({ to: msg.to, content: msg.content, emoji: msg.emoji });
+                }}
+                onDelete={() => {
+                  if (confirmDelete()) setData((prev) => prev.filter((x) => x.id !== msg.id));
+                }}
+              />
+            </>
+          )}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ─── Wishes ───────────────────────────────────────────────────────────────────
+function WishesTab({ data, setData }: { data: WishEntry[]; setData: Setter<WishEntry[]> }) {
+  const blank = { wish: "", deadline: "", priority: "💫" };
+  const [form, setForm] = useState(blank);
+  const [adding, setAdding] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState(blank);
+
+  const PRIORITY = ["💫", "🌟", "⭐", "✨"];
+
+  const save = () => {
+    if (!form.wish.trim()) return;
+    setData((prev) => [{ id: uid(), createdAt: now(), date: today(), done: false, ...form }, ...prev]);
+    setForm(blank);
+    setAdding(false);
+  };
+
+  const saveEdit = () => {
+    if (!editId || !editForm.wish.trim()) return;
+    setData((prev) =>
+      prev.map((w) => (w.id === editId ? { ...w, ...editForm, updatedAt: now() } : w))
+    );
+    setEditId(null);
+  };
+
+  const toggle = (id: string) =>
+    setData((prev) => prev.map((w) => (w.id === id ? { ...w, done: !w.done, updatedAt: now() } : w)));
+
+  const Fields = ({ value, setValue }: { value: typeof blank; setValue: Setter<typeof blank> }) => (
+    <>
+      <Input value={value.wish} onChange={(v) => setValue((p) => ({ ...p, wish: v }))} placeholder="你们的愿望是什么？" style={{ marginBottom: 10 }} />
+      <Input value={value.deadline} onChange={(v) => setValue((p) => ({ ...p, deadline: v }))} placeholder="希望什么时候实现？（可选）" style={{ marginBottom: 10 }} />
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 15, color: COLORS.muted }}>优先级</span>
+        {PRIORITY.map((p) => (
+          <span
+            key={p}
+            onClick={() => setValue((old) => ({ ...old, priority: p }))}
+            style={{
+              fontSize: 24, cursor: "pointer",
+              opacity: value.priority === p ? 1 : 0.35,
+              transform: value.priority === p ? "scale(1.18)" : "scale(1)",
+              transition: "opacity .15s, transform .15s",
+              display: "inline-block",
+            }}
+          >
+            {p}
+          </span>
+        ))}
+      </div>
+    </>
+  );
+
+  const pending = data.filter((w) => !w.done);
+  const done = data.filter((w) => w.done);
+
+  const WishCard = ({ w }: { w: WishEntry }) => (
+    <Card style={w.done ? { opacity: 0.75 } : {}}>
+      {editId === w.id ? (
+        <>
+          {Fields({ value: editForm, setValue: setEditForm })}
+          <FormActions onSave={saveEdit} onCancel={() => setEditId(null)} saveText="保存修改" color={COLORS.yellow} />
+        </>
+      ) : (
+        <>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+            <div
+              onClick={() => toggle(w.id)}
+              style={{
+                width: 24, height: 24, borderRadius: "50%",
+                border: w.done ? "none" : `2px solid ${COLORS.yellow}`,
+                background: w.done ? COLORS.green : "transparent",
+                cursor: "pointer", flexShrink: 0, marginTop: 2,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "background .2s",
+              }}
+            >
+              {w.done && <span style={{ color: "#fff", fontSize: 13 }}>✓</span>}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 800, color: w.done ? COLORS.muted : COLORS.text, textDecoration: w.done ? "line-through" : "none", wordBreak: "break-word" }}>
+                {w.priority} {w.wish}
+              </div>
+              {w.deadline && <div style={{ fontSize: 13, color: COLORS.muted, marginTop: 4 }}>🗓 {w.deadline}前实现</div>}
+            </div>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <ActionButtons
+              onEdit={() => {
+                setEditId(w.id);
+                setEditForm({ wish: w.wish, deadline: w.deadline, priority: w.priority });
+              }}
+              onDelete={() => {
+                if (confirmDelete()) setData((prev) => prev.filter((x) => x.id !== w.id));
+              }}
+            />
+          </div>
+        </>
+      )}
+    </Card>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>愿望清单 ✨</h2>
+        <Btn onClick={() => setAdding(!adding)} small color={COLORS.yellow} style={{ color: COLORS.text }}>
+          {adding ? "取消" : "+ 许愿"}
+        </Btn>
+      </div>
+
+      {adding && (
+        <Card style={{ border: `2px solid ${COLORS.yellow}` }}>
+          {Fields({ value: form, setValue: setForm })}
+          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="许下这个愿望 🌙" color={COLORS.yellow} />
+        </Card>
+      )}
+
+      {data.length === 0 && !adding && <EmptyState emoji="✨" text="还没有愿望，快写下你们的心愿吧！" />}
+
+      {pending.map((w) => <div key={w.id}>{WishCard({ w })}</div>)}
+
+      {done.length > 0 && (
+        <div>
+          <div style={{ fontWeight: 900, color: COLORS.green, fontSize: 16, margin: "16px 0 8px" }}>🎉 已实现的愿望</div>
+          {done.map((w) => <div key={w.id}>{WishCard({ w })}</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Schedule ─────────────────────────────────────────────────────────────────
+const DAYS_ZH = ["周一","周二","周三","周四","周五","周六","周日"];
+const TIME_BLOCKS = ["上午","中午","下午","傍晚","晚上"];
+const TIME_BLOCK_ORDER: Record<string, number> = { 上午: 0, 中午: 1, 下午: 2, 傍晚: 3, 晚上: 4 };
+
+const inferSchedulePeriod = (item: Pick<ScheduleEntry, "time"> & { period?: string }) => {
+  if (item.period && TIME_BLOCKS.includes(item.period)) return item.period;
+  const raw = String(item.time || "");
+  const textMatch = TIME_BLOCKS.find((block) => raw.includes(block));
+  if (textMatch) return textMatch;
+  const hourMatch = raw.match(/(\d{1,2})(?::|点)?/);
+  if (!hourMatch) return "";
+  const hour = Number(hourMatch[1]);
+  if (Number.isNaN(hour)) return "";
+  if (hour >= 5 && hour < 11) return "上午";
+  if (hour >= 11 && hour < 14) return "中午";
+  if (hour >= 14 && hour < 17) return "下午";
+  if (hour >= 17 && hour < 20) return "傍晚";
+  return "晚上";
+};
+
+const sortScheduleItems = (items: ScheduleEntry[]) => {
+  const hasManualOrder = items.some((item) => typeof item.sortOrder === "number");
+  return [...items].sort((a, b) => {
+    if (hasManualOrder) {
+      return (a.sortOrder ?? Number.MAX_SAFE_INTEGER) - (b.sortOrder ?? Number.MAX_SAFE_INTEGER) || a.createdAt - b.createdAt;
+    }
+    const ap = inferSchedulePeriod(a);
+    const bp = inferSchedulePeriod(b);
+    const ao = ap ? TIME_BLOCK_ORDER[ap] : 99;
+    const bo = bp ? TIME_BLOCK_ORDER[bp] : 99;
+    return ao - bo || a.createdAt - b.createdAt;
+  });
+};
+
+function ScheduleTab({ data, setData }: { data: ScheduleEntry[]; setData: Setter<ScheduleEntry[]> }) {
+  const blank = { day: "周一", period: "上午", time: "", event: "", who: "一起" };
+  const [form, setForm] = useState(blank);
+  const [adding, setAdding] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState(blank);
+
+  const WHO = ["一起","我","TA"];
+
+  const save = () => {
+    if (!form.event.trim()) return;
+    setData((prev) => {
+      const sameDay = prev.filter((i) => i.day === form.day);
+      const newItem: ScheduleEntry = { id: uid(), createdAt: now(), ...form };
+      if (sameDay.some((i) => typeof i.sortOrder === "number")) {
+        newItem.sortOrder = Math.max(-1, ...sameDay.map((i) => i.sortOrder ?? -1)) + 1;
+      }
+      return [newItem, ...prev];
+    });
+    setForm(blank);
+    setAdding(false);
+  };
+
+  const saveEdit = () => {
+    if (!editId || !editForm.event.trim()) return;
+    setData((prev) =>
+      prev.map((i) => {
+        if (i.id !== editId) return i;
+        const movedToAnotherDay = i.day !== editForm.day;
+        if (!movedToAnotherDay) return { ...i, ...editForm, updatedAt: now() };
+        const sameDay = prev.filter((item) => item.day === editForm.day);
+        const nextOrder = sameDay.some((item) => typeof item.sortOrder === "number")
+          ? Math.max(-1, ...sameDay.map((item) => item.sortOrder ?? -1)) + 1
+          : undefined;
+        return { ...i, ...editForm, sortOrder: nextOrder, updatedAt: now() };
+      })
+    );
+    setEditId(null);
+  };
+
+  const moveScheduleItem = (day: string, id: string, direction: "up" | "down") => {
+    setData((prev) => {
+      const sortedDayItems = sortScheduleItems(prev.filter((item) => item.day === day));
+      const currentIndex = sortedDayItems.findIndex((item) => item.id === id);
+      const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+      if (currentIndex < 0 || targetIndex < 0 || targetIndex >= sortedDayItems.length) return prev;
+      const reordered = sortedDayItems.map((item) => ({ ...item }));
+      [reordered[currentIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[currentIndex]];
+      const updatedById = new Map(
+        reordered.map((item, index) => [
+          item.id,
+          { ...item, sortOrder: index, updatedAt: item.id === id || item.id === sortedDayItems[targetIndex].id ? now() : item.updatedAt },
+        ])
+      );
+      return prev.map((item) => updatedById.get(item.id) || item);
+    });
+  };
+
+  const grouped = DAYS_ZH.reduce<Record<string, ScheduleEntry[]>>((acc, d) => {
+    acc[d] = sortScheduleItems(data.filter((i) => i.day === d));
+    return acc;
+  }, {});
+
+  const Fields = ({ value, setValue }: { value: typeof blank; setValue: Setter<typeof blank> }) => (
+    <>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        {DAYS_ZH.map((d) => (
+          <span key={d} onClick={() => setValue((p) => ({ ...p, day: d }))}
+            style={{ padding: "6px 12px", borderRadius: 999, background: value.day === d ? COLORS.blue : COLORS.light, color: value.day === d ? "#fff" : COLORS.muted, cursor: "pointer", fontSize: 14, fontWeight: 800, transition: "background .15s" }}>
+            {d}
+          </span>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        {TIME_BLOCKS.map((block) => (
+          <span key={block} onClick={() => setValue((p) => ({ ...p, period: block }))}
+            style={{ padding: "6px 12px", borderRadius: 999, background: value.period === block ? COLORS.primary : COLORS.light, color: value.period === block ? "#fff" : COLORS.muted, cursor: "pointer", fontSize: 14, fontWeight: 800, transition: "background .15s" }}>
+            {block}
+          </span>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+        <Input value={value.time} onChange={(v) => setValue((p) => ({ ...p, time: v }))} placeholder="具体时间（可选，如 2:30）" style={{ width: 190 }} />
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {WHO.map((w) => (
+            <span key={w} onClick={() => setValue((p) => ({ ...p, who: w }))}
+              style={{ padding: "6px 12px", borderRadius: 999, background: value.who === w ? COLORS.primary : COLORS.light, color: value.who === w ? "#fff" : COLORS.muted, cursor: "pointer", fontSize: 14, fontWeight: 800, transition: "background .15s" }}>
+              {w}
+            </span>
+          ))}
+        </div>
+      </div>
+      <Input value={value.event} onChange={(v) => setValue((p) => ({ ...p, event: v }))} placeholder="活动内容" style={{ marginBottom: 12 }} />
+    </>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>本周计划 🗓</h2>
+        <Btn onClick={() => setAdding(!adding)} small color={COLORS.blue}>
+          {adding ? "取消" : "+ 加计划"}
+        </Btn>
+      </div>
+
+      {adding && (
+        <Card style={{ border: `2px solid ${COLORS.blue}` }}>
+          {Fields({ value: form, setValue: setForm })}
+          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="加入本周 📅" color={COLORS.blue} />
+        </Card>
+      )}
+
+      {data.length === 0 && !adding && <EmptyState emoji="🗓" text="本周还没有计划，安排起来吧！" />}
+
+      <div style={{ display: "grid", gap: 10 }}>
+        {DAYS_ZH.map((day) =>
+          grouped[day].length === 0 ? null : (
+            <Card key={day} style={{ padding: "16px" }}>
+              <div style={{ fontWeight: 900, color: COLORS.blue, marginBottom: 8 }}>{day}</div>
+              {grouped[day].map((item, index) => (
+                <div key={item.id} style={{ padding: "8px 0", borderBottom: `1px solid ${COLORS.light}` }}>
+                  {editId === item.id ? (
+                    <>
+                      {Fields({ value: editForm, setValue: setEditForm })}
+                      <FormActions onSave={saveEdit} onCancel={() => setEditId(null)} saveText="保存修改" color={COLORS.blue} />
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        {inferSchedulePeriod(item) && <Tag color="#E0F0FF">{inferSchedulePeriod(item)}</Tag>}
+                        {item.time && <span style={{ fontSize: 14, color: COLORS.muted }}>{item.time}</span>}
+                        <span style={{ flex: 1, minWidth: 140, color: COLORS.text, fontSize: 16, wordBreak: "break-word" }}>{item.event}</span>
+                        <Tag color={item.who === "一起" ? COLORS.soft : item.who === "我" ? "#E0F0FF" : "#FFE8F5"}>{item.who}</Tag>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <Btn small outline color={COLORS.muted} onClick={index === 0 ? undefined : () => moveScheduleItem(day, item.id, "up")} style={{ opacity: index === 0 ? 0.35 : 1 }}>↑ 上移</Btn>
+                          <Btn small outline color={COLORS.muted} onClick={index === grouped[day].length - 1 ? undefined : () => moveScheduleItem(day, item.id, "down")} style={{ opacity: index === grouped[day].length - 1 ? 0.35 : 1 }}>↓ 下移</Btn>
+                        </div>
+                        <ActionButtons
+                          onEdit={() => {
+                            setEditId(item.id);
+                            setEditForm({ day: item.day, period: inferSchedulePeriod(item) || "上午", time: item.time, event: item.event, who: item.who });
+                          }}
+                          onDelete={() => {
+                            if (confirmDelete()) setData((prev) => prev.filter((x) => x.id !== item.id));
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+            </Card>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Reminder ─────────────────────────────────────────────────────────────────
+function ReminderTab({ data, setData }: { data: ReminderEntry[]; setData: Setter<ReminderEntry[]> }) {
+  const blank = { content: "", urgency: "普通", date: "" };
+  const [form, setForm] = useState(blank);
+  const [adding, setAdding] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState(blank);
+
+  const URGENCY = ["紧急","普通","随时"];
+  const URGENCY_COLOR: Record<string, string> = { 紧急: "#FFE0E0", 普通: COLORS.light, 随时: "#E8F5E8" };
+  const URGENCY_DOT: Record<string, string> = { 紧急: "#FF6B6B", 普通: COLORS.primary, 随时: COLORS.green };
+
+  const save = () => {
+    if (!form.content.trim()) return;
+    setData((prev) => [{ id: uid(), createdAt: now(), done: false, ...form }, ...prev]);
+    setForm(blank);
+    setAdding(false);
+  };
+
+  const saveEdit = () => {
+    if (!editId || !editForm.content.trim()) return;
+    setData((prev) =>
+      prev.map((r) => (r.id === editId ? { ...r, ...editForm, updatedAt: now() } : r))
+    );
+    setEditId(null);
+  };
+
+  const toggle = (id: string) =>
+    setData((prev) => prev.map((r) => (r.id === id ? { ...r, done: !r.done, updatedAt: now() } : r)));
+
+  const Fields = ({ value, setValue }: { value: typeof blank; setValue: Setter<typeof blank> }) => (
+    <>
+      <Input value={value.content} onChange={(v) => setValue((p) => ({ ...p, content: v }))} placeholder="要提醒他的事…" style={{ marginBottom: 10 }} />
+      <Input value={value.date} onChange={(v) => setValue((p) => ({ ...p, date: v }))} placeholder="提醒时间（可选）" style={{ marginBottom: 10 }} />
+      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+        {URGENCY.map((u) => (
+          <span key={u} onClick={() => setValue((p) => ({ ...p, urgency: u }))}
+            style={{ padding: "6px 14px", borderRadius: 999, background: value.urgency === u ? COLORS.primary : COLORS.light, color: value.urgency === u ? "#fff" : COLORS.muted, cursor: "pointer", fontSize: 14, fontWeight: 800, transition: "background .15s" }}>
+            {u}
+          </span>
+        ))}
+      </div>
+    </>
+  );
+
+  const ReminderCard = ({ r }: { r: ReminderEntry }) => (
+    <Card style={{ background: URGENCY_COLOR[r.urgency], borderLeft: `4px solid ${URGENCY_DOT[r.urgency]}`, opacity: r.done ? 0.65 : 1 }}>
+      {editId === r.id ? (
+        <>
+          {Fields({ value: editForm, setValue: setEditForm })}
+          <FormActions onSave={saveEdit} onCancel={() => setEditId(null)} saveText="保存修改" />
+        </>
+      ) : (
+        <>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+            <div
+              onClick={() => toggle(r.id)}
+              style={{
+                width: 24, height: 24, borderRadius: "50%",
+                border: r.done ? "none" : `2px solid ${URGENCY_DOT[r.urgency]}`,
+                background: r.done ? COLORS.green : "transparent",
+                cursor: "pointer", flexShrink: 0, marginTop: 2,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "background .2s",
+              }}
+            >
+              {r.done && <span style={{ color: "#fff", fontSize: 13 }}>✓</span>}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 800, color: COLORS.text, marginBottom: 4, textDecoration: r.done ? "line-through" : "none", wordBreak: "break-word" }}>{r.content}</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Tag color={URGENCY_COLOR[r.urgency]}>{r.urgency}</Tag>
+                {r.date && <span style={{ fontSize: 13, color: COLORS.muted }}>{r.date}</span>}
+              </div>
+            </div>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <ActionButtons
+              onEdit={() => {
+                setEditId(r.id);
+                setEditForm({ content: r.content, urgency: r.urgency, date: r.date });
+              }}
+              onDelete={() => {
+                if (confirmDelete()) setData((prev) => prev.filter((x) => x.id !== r.id));
+              }}
+            />
+          </div>
+        </>
+      )}
+    </Card>
+  );
+
+  const todo = data.filter((r) => !r.done);
+  const done = data.filter((r) => r.done);
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>提醒他 🔔</h2>
+        <Btn onClick={() => setAdding(!adding)} small>
+          {adding ? "取消" : "+ 加提醒"}
+        </Btn>
+      </div>
+
+      {adding && (
+        <Card style={{ border: `2px solid ${COLORS.secondary}` }}>
+          {Fields({ value: form, setValue: setForm })}
+          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="保存提醒 🔔" />
+        </Card>
+      )}
+
+      {data.length === 0 && !adding && <EmptyState emoji="🔔" text="还没有提醒，记下要告诉TA的重要事项吧～" />}
+
+      {todo.map((r) => <div key={r.id}>{ReminderCard({ r })}</div>)}
+
+      {done.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 15, color: COLORS.muted, fontWeight: 900, marginBottom: 8 }}>已完成</div>
+          {done.map((r) => <div key={r.id}>{ReminderCard({ r })}</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Check-in ─────────────────────────────────────────────────────────────────
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+const daysBetween = (fromDate: string, toDate = today()) => {
+  const from = toLocalDate(fromDate);
+  const to = toLocalDate(toDate);
+  return Math.max(0, Math.floor((to.getTime() - from.getTime()) / MS_PER_DAY));
+};
+
+const displayCurrentStreak = (item: CheckinEntry) => {
+  if (!item.lastCheckinDate) return 0;
+  const gap = daysBetween(item.lastCheckinDate);
+  if (gap <= 1) return item.currentStreak || 0;
+  return 0;
+};
+
+function CheckinTab({ data, setData }: { data: CheckinEntry[]; setData: Setter<CheckinEntry[]> }) {
+  const [name, setName] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const addProject = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setData((prev) => [
+      { id: uid(), createdAt: now(), name: trimmed, currentStreak: 0, longestStreak: 0, totalCheckins: 0, history: [] },
+      ...prev,
+    ]);
+    setName("");
+    setAdding(false);
+  };
+
+  const checkIn = (id: string) => {
+    const todayKey = today();
+    setData((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        if (item.lastCheckinDate === todayKey) {
+          alert("今天已经打过卡啦，明天再来～");
+          return item;
+        }
+        const gap = item.lastCheckinDate ? daysBetween(item.lastCheckinDate, todayKey) : null;
+        const baseStreak = displayCurrentStreak(item);
+        const nextStreak = gap === 1 ? baseStreak + 1 : 1;
+        const history = Array.from(new Set([...(item.history || []), todayKey])).sort();
+        return {
+          ...item,
+          lastCheckinDate: todayKey,
+          currentStreak: nextStreak,
+          longestStreak: Math.max(item.longestStreak || 0, nextStreak),
+          totalCheckins: (item.totalCheckins || 0) + 1,
+          history,
+          updatedAt: now(),
+        };
+      })
+    );
+  };
+
+  const deleteProject = (id: string) => {
+    if (!confirmDelete()) return;
+    setData((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const sorted = [...data].sort((a, b) => b.createdAt - a.createdAt);
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>打卡 ✅</h2>
+        <Btn onClick={() => setAdding(!adding)} small color={COLORS.green}>
+          {adding ? "取消" : "+ 添加项目"}
+        </Btn>
+      </div>
+
+      {adding && (
+        <Card style={{ border: `2px solid ${COLORS.green}` }}>
+          <Input value={name} onChange={setName} placeholder="项目名称，比如：早睡、运动、读书" style={{ marginBottom: 12 }} />
+          <FormActions onSave={addProject} onCancel={() => setAdding(false)} saveText="添加项目" color={COLORS.green} />
+        </Card>
+      )}
+
+      {sorted.length === 0 && !adding && <EmptyState emoji="✅" text="还没有打卡项目，先添加一个想坚持的小目标吧～" />}
+
+      {sorted.map((item) => {
+        const current = displayCurrentStreak(item);
+        const lastGap = item.lastCheckinDate ? daysBetween(item.lastCheckinDate) : null;
+        const checkedToday = item.lastCheckinDate === today();
+
+        return (
+          <Card key={item.id} style={{ borderLeft: `4px solid ${COLORS.green}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 19, fontWeight: 900, color: COLORS.text, wordBreak: "break-word" }}>{item.name}</div>
+                <div style={{ color: COLORS.muted, fontSize: 13, marginTop: 4 }}>
+                  {item.lastCheckinDate ? `上次打卡：${fmtDate(item.lastCheckinDate)}` : "还没有开始打卡"}
+                </div>
+              </div>
+              <Tag color={checkedToday ? "#E8F5E8" : COLORS.soft}>{checkedToday ? "今日已打卡" : "今日待打卡"}</Tag>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, marginBottom: 14 }}>
+              {current === 0 && (
+                <div style={{ background: COLORS.light, borderRadius: 14, padding: "10px 12px" }}>
+                  <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>离上次打卡</div>
+                  <div style={{ color: COLORS.text, fontSize: 22, fontWeight: 900, marginTop: 2 }}>{lastGap === null ? "—" : `${lastGap}天`}</div>
+                </div>
+              )}
+              <div style={{ background: COLORS.light, borderRadius: 14, padding: "10px 12px" }}>
+                <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>已坚持</div>
+                <div style={{ color: current > 0 ? COLORS.green : COLORS.text, fontSize: 22, fontWeight: 900, marginTop: 2 }}>{current}天</div>
+              </div>
+              <div style={{ background: COLORS.light, borderRadius: 14, padding: "10px 12px" }}>
+                <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>最长坚持</div>
+                <div style={{ color: COLORS.text, fontSize: 22, fontWeight: 900, marginTop: 2 }}>{item.longestStreak || 0}天</div>
+              </div>
+              <div style={{ background: COLORS.light, borderRadius: 14, padding: "10px 12px" }}>
+                <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>累计打卡</div>
+                <div style={{ color: COLORS.text, fontSize: 22, fontWeight: 900, marginTop: 2 }}>{item.totalCheckins || 0}次</div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <Btn
+                onClick={() => checkIn(item.id)}
+                color={checkedToday ? COLORS.muted : COLORS.green}
+                small
+                className={!checkedToday ? "diary-pulse" : ""}
+              >
+                {checkedToday ? "今天已完成 ✓" : "打卡 ✅"}
+              </Btn>
+              <Btn small outline color={COLORS.danger} onClick={() => deleteProject(item.id)}>
+                删除项目
+              </Btn>
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Shopping List ────────────────────────────────────────────────────────────
+function ShoppingTab({ data, setData }: { data: ShoppingEntry[]; setData: Setter<ShoppingEntry[]> }) {
+  const blank = { name: "", quantity: "", category: "日用品", note: "" };
+  const [form, setForm] = useState(blank);
+  const [adding, setAdding] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState(blank);
+
+  const CATEGORIES = ["日用品","食物","宝宝","家里","其他"];
+  const CATEGORY_COLOR: Record<string, string> = {
+    日用品: COLORS.soft,
+    食物: "#E8F5E8",
+    宝宝: "#FFE8F5",
+    家里: "#E0F0FF",
+    其他: COLORS.light,
+  };
+
+  const save = () => {
+    if (!form.name.trim()) return;
+    setData((prev) => [{ id: uid(), createdAt: now(), bought: false, ...form }, ...prev]);
+    setForm(blank);
+    setAdding(false);
+  };
+
+  const saveEdit = () => {
+    if (!editId || !editForm.name.trim()) return;
+    setData((prev) =>
+      prev.map((item) => (item.id === editId ? { ...item, ...editForm, updatedAt: now() } : item))
+    );
+    setEditId(null);
+  };
+
+  const toggleBought = (id: string) =>
+    setData((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, bought: !item.bought, updatedAt: now() } : item))
+    );
+
+  const clearBought = () => {
+    const boughtCount = data.filter((item) => item.bought).length;
+    if (boughtCount === 0) return;
+    if (!window.confirm(`确定清空 ${boughtCount} 个已买项目吗？`)) return;
+    setData((prev) => prev.filter((item) => !item.bought));
+  };
+
+  const Fields = ({ value, setValue }: { value: typeof blank; setValue: Setter<typeof blank> }) => (
+    <>
+      <Input value={value.name} onChange={(v) => setValue((p) => ({ ...p, name: v }))} placeholder="要买什么？比如：牛奶、纸巾、洗衣液" style={{ marginBottom: 10 }} />
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+        <Input value={value.quantity} onChange={(v) => setValue((p) => ({ ...p, quantity: v }))} placeholder="数量（可选，如 2盒）" style={{ width: 190 }} />
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {CATEGORIES.map((c) => (
+            <span key={c} onClick={() => setValue((p) => ({ ...p, category: c }))}
+              style={{ padding: "6px 12px", borderRadius: 999, background: value.category === c ? COLORS.green : COLORS.light, color: value.category === c ? "#fff" : COLORS.muted, cursor: "pointer", fontSize: 14, fontWeight: 800, transition: "background .15s" }}>
+              {c}
+            </span>
+          ))}
+        </div>
+      </div>
+      <Input value={value.note} onChange={(v) => setValue((p) => ({ ...p, note: v }))} placeholder="备注（可选，如 Costco / Target / 要打折再买）" style={{ marginBottom: 12 }} />
+    </>
+  );
+
+  const todo = data.filter((item) => !item.bought).sort((a, b) => b.createdAt - a.createdAt);
+  const bought = data.filter((item) => item.bought).sort((a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt);
+
+  const ShoppingCard = ({ item }: { item: ShoppingEntry }) => (
+    <Card style={{ borderLeft: `4px solid ${item.bought ? COLORS.green : COLORS.secondary}`, opacity: item.bought ? 0.65 : 1 }}>
+      {editId === item.id ? (
+        <>
+          {Fields({ value: editForm, setValue: setEditForm })}
+          <FormActions onSave={saveEdit} onCancel={() => setEditId(null)} saveText="保存修改" color={COLORS.green} />
+        </>
+      ) : (
+        <>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+            <div
+              onClick={() => toggleBought(item.id)}
+              style={{
+                width: 25, height: 25, borderRadius: "50%",
+                border: item.bought ? "none" : `2px solid ${COLORS.green}`,
+                background: item.bought ? COLORS.green : "transparent",
+                cursor: "pointer", flexShrink: 0, marginTop: 2,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "background .2s",
+              }}
+            >
+              {item.bought && <span style={{ color: "#fff", fontSize: 13 }}>✓</span>}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+                <span style={{ fontWeight: 900, color: item.bought ? COLORS.muted : COLORS.text, textDecoration: item.bought ? "line-through" : "none", wordBreak: "break-word" }}>
+                  {item.name}
+                </span>
+                {item.quantity && <span style={{ fontSize: 14, color: COLORS.muted }}>× {item.quantity}</span>}
+                <Tag color={CATEGORY_COLOR[item.category] || COLORS.light}>{item.category}</Tag>
+              </div>
+              {item.note && <div style={{ color: COLORS.muted, fontSize: 14, lineHeight: 1.6, wordBreak: "break-word" }}>📝 {item.note}</div>}
+            </div>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <ActionButtons
+              onEdit={() => {
+                setEditId(item.id);
+                setEditForm({ name: item.name, quantity: item.quantity, category: item.category, note: item.note });
+              }}
+              onDelete={() => {
+                if (confirmDelete()) setData((prev) => prev.filter((x) => x.id !== item.id));
+              }}
+            />
+          </div>
+        </>
+      )}
+    </Card>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>购物清单 🛒</h2>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {bought.length > 0 && (
+            <Btn onClick={clearBought} small outline color={COLORS.danger}>清空已买</Btn>
+          )}
+          <Btn onClick={() => setAdding(!adding)} small color={COLORS.green}>
+            {adding ? "取消" : "+ 加物品"}
+          </Btn>
+        </div>
+      </div>
+
+      {adding && (
+        <Card style={{ border: `2px solid ${COLORS.green}` }}>
+          {Fields({ value: form, setValue: setForm })}
+          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="加入清单 🛒" color={COLORS.green} />
+        </Card>
+      )}
+
+      {data.length === 0 && !adding && <EmptyState emoji="🛒" text="购物清单还是空的，先加一个要买的东西吧～" />}
+
+      {todo.length > 0 && (
+        <div>
+          <div style={{ fontWeight: 900, color: COLORS.green, fontSize: 15, margin: "0 0 8px" }}>待买</div>
+          {todo.map((item) => <div key={item.id}>{ShoppingCard({ item })}</div>)}
+        </div>
+      )}
+
+      {bought.length > 0 && (
+        <div>
+          <div style={{ fontWeight: 900, color: COLORS.muted, fontSize: 15, margin: "16px 0 8px" }}>已买</div>
+          {bought.map((item) => <div key={item.id}>{ShoppingCard({ item })}</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── App Shell ────────────────────────────────────────────────────────────────
+export default function CoupleDiary() {
+  const [activeTab, setActiveTab] = useState<TabId>("diary");
+
+  // ── Data (localStorage keys are UNCHANGED) ────────────────────────────────
+  const [diary,     setDiary]     = useLocalStorage<DiaryEntry[]>   ("couple-diary-diary-v2",     []);
+  const [jokes,     setJokes]     = useLocalStorage<JokeEntry[]>    ("couple-diary-jokes-v2",     []);
+  const [checkins,  setCheckins]  = useLocalStorage<CheckinEntry[]> ("couple-diary-checkins-v1",  []);
+  const [calendarData, setCalendarData] = useLocalStorage<CalendarData>("couple-diary-calendar-v2", {});
+  const [whispers,  setWhispers]  = useLocalStorage<WhisperEntry[]> ("couple-diary-whispers-v2",  []);
+  const [wishes,    setWishes]    = useLocalStorage<WishEntry[]>    ("couple-diary-wishes-v2",    []);
+  const [schedule,  setSchedule]  = useLocalStorage<ScheduleEntry[]>("couple-diary-schedule-v2",  []);
+  const [shopping,  setShopping]  = useLocalStorage<ShoppingEntry[]>("couple-diary-shopping-v1",  []);
+  const [reminders, setReminders] = useLocalStorage<ReminderEntry[]>("couple-diary-reminders-v2", []);
+
+  const renderTab = () => {
+    switch (activeTab) {
+      case "diary":    return <DiaryTab    data={diary}        setData={setDiary} />;
+      case "checkin":  return <CheckinTab  data={checkins}     setData={setCheckins} />;
+      case "schedule": return <ScheduleTab data={schedule}     setData={setSchedule} />;
+      case "shopping": return <ShoppingTab data={shopping}     setData={setShopping} />;
+      case "reminder": return <ReminderTab data={reminders}    setData={setReminders} />;
+      case "whisper":  return <WhisperTab  data={whispers}     setData={setWhispers} />;
+      case "jokes":    return <JokesTab    data={jokes}        setData={setJokes} />;
+      case "calendar": return <CalendarTab data={calendarData} setData={setCalendarData} />;
+      case "wishes":   return <WishesTab   data={wishes}       setData={setWishes} />;
+      default: return null;
+    }
+  };
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        width: "100%",
+        maxWidth: "100%",
+        overflowX: "hidden",
+        background: COLORS.bg,
+        fontFamily: "'PingFang SC', 'Noto Serif SC', 'STSong', 'Georgia', 'Microsoft YaHei', serif",
+        fontSize: 17,
+        color: COLORS.text,
+      }}
+    >
+      <GlobalStyle />
+
+      {/* ── Header ── */}
+      <div
+        style={{
+          background: "linear-gradient(135deg, #C85840 0%, #E07055 30%, #EA8060 60%, #F4A880 100%)",
+          padding: "24px 16px 16px",
+          textAlign: "center",
+          position: "sticky",
+          top: 0,
+          zIndex: 100,
+          width: "100%",
+          maxWidth: "100%",
+          boxShadow: "0 2px 24px rgba(200, 88, 64, .32)",
+        }}
+      >
+        <div style={{
+          fontSize: 11,
+          color: "rgba(255,255,255,.72)",
+          letterSpacing: 4,
+          marginBottom: 4,
+          textTransform: "uppercase",
+          fontWeight: 600,
+        }}>
+          OUR LITTLE WORLD
+        </div>
+        <h1 style={{
+          margin: 0,
+          color: "#fff",
+          fontSize: 28,
+          fontWeight: 900,
+          letterSpacing: 0.5,
+          textShadow: "0 1px 10px rgba(0,0,0,.18)",
+        }}>
+          💑 我们的日记本
+        </h1>
+      </div>
+
+      {/* ── Tab Bar ── */}
+      <div
+        className="hide-scrollbar"
+        style={{
+          display: "flex",
+          overflowX: "auto",
+          overflowY: "hidden",
+          gap: 2,
+          background: "rgba(255,255,255,.96)",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          borderBottom: "1px solid rgba(240,195,175,.45)",
+          position: "sticky",
+          top: 91,
+          zIndex: 99,
+          WebkitOverflowScrolling: "touch",
+          width: "100%",
+          maxWidth: "100%",
+          padding: "5px 4px 3px",
+        }}
+      >
+        {TABS.map((tab) => {
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className="diary-tab"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                padding: "6px 12px 7px",
+                border: "none",
+                background: active
+                  ? "linear-gradient(145deg, rgba(232,112,86,.15), rgba(244,168,138,.10))"
+                  : "transparent",
+                borderRadius: 12,
+                cursor: "pointer",
+                color: active ? COLORS.primary : COLORS.muted,
+                fontFamily: "inherit",
+                flex: "0 0 auto",
+                boxShadow: active ? "0 1px 8px rgba(232,112,86,.14), 0 0 0 1px rgba(232,112,86,.12)" : "none",
+              }}
+            >
+              <span style={{ fontSize: 20, lineHeight: 1 }}>{tab.icon}</span>
+              <span style={{
+                fontSize: 11,
+                fontWeight: active ? 800 : 500,
+                marginTop: 4,
+                whiteSpace: "nowrap",
+                letterSpacing: 0.3,
+                transition: "font-weight .2s",
+              }}>
+                {tab.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Content ── */}
+      <main
+        key={activeTab}
+        className="diary-fadein"
+        style={{
+          width: "100%",
+          maxWidth: 680,
+          margin: "0 auto",
+          padding: "20px 14px 96px",
+          overflowX: "hidden",
+        }}
+      >
+        {renderTab()}
+      </main>
+
+      {/* ── Footer ── */}
+      <div
+        style={{
+          textAlign: "center",
+          padding: "12px 12px",
+          color: COLORS.muted,
+          fontSize: 12,
+          position: "fixed",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          background: "rgba(255,246,242,.95)",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          borderTop: "1px solid rgba(240,195,175,.4)",
+          zIndex: 101,
+          letterSpacing: 0.6,
+        }}
+      >
+        💕 只属于我们两个人的小天地
+      </div>
+    </div>
+  );
+}
