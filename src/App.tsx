@@ -445,6 +445,52 @@ const ActionButtons = ({
   </div>
 );
 
+const MiniIconButton = ({
+  onClick,
+  children,
+  color = COLORS.muted,
+  disabled = false,
+  label,
+  style = {},
+}: {
+  onClick?: () => void;
+  children: React.ReactNode;
+  color?: string;
+  disabled?: boolean;
+  label?: string;
+  style?: CSSProperties;
+}) => (
+  <button
+    type="button"
+    aria-label={label}
+    title={label}
+    disabled={disabled}
+    onClick={disabled ? undefined : onClick}
+    className="diary-btn"
+    style={{
+      width: 30,
+      height: 30,
+      minWidth: 30,
+      borderRadius: 999,
+      border: `1px solid ${color}33`,
+      background: disabled ? "rgba(155,123,114,.08)" : "rgba(255,255,255,.9)",
+      color: disabled ? "rgba(155,123,114,.35)" : color,
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 0,
+      fontSize: 16,
+      fontWeight: 900,
+      lineHeight: 1,
+      cursor: disabled ? "not-allowed" : "pointer",
+      boxShadow: disabled ? "none" : "0 2px 8px rgba(61,34,24,.08)",
+      ...style,
+    }}
+  >
+    {children}
+  </button>
+);
+
 const FormActions = ({
   onSave,
   onCancel,
@@ -1119,19 +1165,29 @@ const inferSchedulePeriod = (item: Pick<ScheduleEntry, "time"> & { period?: stri
   return "晚上";
 };
 
+const getSchedulePeriodOrder = (item: Pick<ScheduleEntry, "time"> & { period?: string }) => {
+  const period = inferSchedulePeriod(item);
+  return period ? TIME_BLOCK_ORDER[period] : 99;
+};
+
 const sortScheduleItems = (items: ScheduleEntry[]) => {
-  const hasManualOrder = items.some((item) => typeof item.sortOrder === "number");
   return [...items].sort((a, b) => {
-    if (hasManualOrder) {
-      return (a.sortOrder ?? Number.MAX_SAFE_INTEGER) - (b.sortOrder ?? Number.MAX_SAFE_INTEGER) || a.createdAt - b.createdAt;
-    }
-    const ap = inferSchedulePeriod(a);
-    const bp = inferSchedulePeriod(b);
-    const ao = ap ? TIME_BLOCK_ORDER[ap] : 99;
-    const bo = bp ? TIME_BLOCK_ORDER[bp] : 99;
-    return ao - bo || a.createdAt - b.createdAt;
+    const periodDiff = getSchedulePeriodOrder(a) - getSchedulePeriodOrder(b);
+    if (periodDiff !== 0) return periodDiff;
+    return (a.sortOrder ?? Number.MAX_SAFE_INTEGER) - (b.sortOrder ?? Number.MAX_SAFE_INTEGER) || a.createdAt - b.createdAt;
   });
 };
+
+const getScheduleMoveTargetIndex = (items: ScheduleEntry[], id: string, direction: "up" | "down") => {
+  const currentIndex = items.findIndex((item) => item.id === id);
+  if (currentIndex < 0) return -1;
+  const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+  if (targetIndex < 0 || targetIndex >= items.length) return -1;
+  return inferSchedulePeriod(items[currentIndex]) === inferSchedulePeriod(items[targetIndex]) ? targetIndex : -1;
+};
+
+const canMoveScheduleItem = (items: ScheduleEntry[], id: string, direction: "up" | "down") =>
+  getScheduleMoveTargetIndex(items, id, direction) >= 0;
 
 function ScheduleTab({ data, setData }: { data: ScheduleEntry[]; setData: Setter<ScheduleEntry[]> }) {
   const blank = { day: "周一", period: "上午", time: "", event: "", who: "一起" };
@@ -1161,12 +1217,16 @@ function ScheduleTab({ data, setData }: { data: ScheduleEntry[]; setData: Setter
     setData((prev) =>
       prev.map((i) => {
         if (i.id !== editId) return i;
-        const movedToAnotherDay = i.day !== editForm.day;
-        if (!movedToAnotherDay) return { ...i, ...editForm, updatedAt: now() };
-        const sameDay = prev.filter((item) => item.day === editForm.day);
-        const nextOrder = sameDay.some((item) => typeof item.sortOrder === "number")
-          ? Math.max(-1, ...sameDay.map((item) => item.sortOrder ?? -1)) + 1
-          : undefined;
+        const movedToAnotherGroup =
+          i.day !== editForm.day || inferSchedulePeriod(i) !== editForm.period;
+        if (!movedToAnotherGroup) return { ...i, ...editForm, updatedAt: now() };
+        const sameGroup = prev.filter(
+          (item) =>
+            item.id !== editId &&
+            item.day === editForm.day &&
+            inferSchedulePeriod(item) === editForm.period
+        );
+        const nextOrder = Math.max(-1, ...sameGroup.map((item) => item.sortOrder ?? -1)) + 1;
         return { ...i, ...editForm, sortOrder: nextOrder, updatedAt: now() };
       })
     );
@@ -1177,14 +1237,15 @@ function ScheduleTab({ data, setData }: { data: ScheduleEntry[]; setData: Setter
     setData((prev) => {
       const sortedDayItems = sortScheduleItems(prev.filter((item) => item.day === day));
       const currentIndex = sortedDayItems.findIndex((item) => item.id === id);
-      const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-      if (currentIndex < 0 || targetIndex < 0 || targetIndex >= sortedDayItems.length) return prev;
+      const targetIndex = getScheduleMoveTargetIndex(sortedDayItems, id, direction);
+      if (currentIndex < 0 || targetIndex < 0) return prev;
       const reordered = sortedDayItems.map((item) => ({ ...item }));
       [reordered[currentIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[currentIndex]];
+      const changedIds = new Set([id, sortedDayItems[targetIndex].id]);
       const updatedById = new Map(
         reordered.map((item, index) => [
           item.id,
-          { ...item, sortOrder: index, updatedAt: item.id === id || item.id === sortedDayItems[targetIndex].id ? now() : item.updatedAt },
+          { ...item, sortOrder: index, updatedAt: changedIds.has(item.id) ? now() : item.updatedAt },
         ])
       );
       return prev.map((item) => updatedById.get(item.id) || item);
@@ -1267,20 +1328,42 @@ function ScheduleTab({ data, setData }: { data: ScheduleEntry[]; setData: Setter
                         <span style={{ flex: 1, minWidth: 140, color: COLORS.text, fontSize: 16, wordBreak: "break-word" }}>{item.event}</span>
                         <Tag color={item.who === "一起" ? COLORS.soft : item.who === "我" ? "#E0F0FF" : "#FFE8F5"}>{item.who}</Tag>
                       </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <Btn small outline color={COLORS.muted} onClick={index === 0 ? undefined : () => moveScheduleItem(day, item.id, "up")} style={{ opacity: index === 0 ? 0.35 : 1 }}>↑ 上移</Btn>
-                          <Btn small outline color={COLORS.muted} onClick={index === grouped[day].length - 1 ? undefined : () => moveScheduleItem(day, item.id, "down")} style={{ opacity: index === grouped[day].length - 1 ? 0.35 : 1 }}>↓ 下移</Btn>
-                        </div>
-                        <ActionButtons
-                          onEdit={() => {
+                      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 7, flexWrap: "wrap", marginTop: 10 }}>
+                        <MiniIconButton
+                          label="上移"
+                          color={COLORS.muted}
+                          disabled={!canMoveScheduleItem(grouped[day], item.id, "up")}
+                          onClick={() => moveScheduleItem(day, item.id, "up")}
+                        >
+                          ↑
+                        </MiniIconButton>
+                        <MiniIconButton
+                          label="下移"
+                          color={COLORS.muted}
+                          disabled={!canMoveScheduleItem(grouped[day], item.id, "down")}
+                          onClick={() => moveScheduleItem(day, item.id, "down")}
+                        >
+                          ↓
+                        </MiniIconButton>
+                        <MiniIconButton
+                          label="编辑"
+                          color={COLORS.blue}
+                          onClick={() => {
                             setEditId(item.id);
                             setEditForm({ day: item.day, period: inferSchedulePeriod(item) || "上午", time: item.time, event: item.event, who: item.who });
                           }}
-                          onDelete={() => {
+                        >
+                          /
+                        </MiniIconButton>
+                        <MiniIconButton
+                          label="删除"
+                          color={COLORS.danger}
+                          onClick={() => {
                             if (confirmDelete()) setData((prev) => prev.filter((x) => x.id !== item.id));
                           }}
-                        />
+                        >
+                          -
+                        </MiniIconButton>
                       </div>
                     </>
                   )}

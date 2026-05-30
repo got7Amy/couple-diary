@@ -5,6 +5,6 @@ export default defineConfig({
   plugins: [react()],
   base: '/couple-diary/',
   build: {
-    outDir: 'Got7amy.GitHub.io/couple-diary',
+    outDir: '../Got7amy.GitHub.io/couple-diary',
   },
 })
