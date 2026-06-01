@@ -35,6 +35,7 @@ const BTN_GRADIENTS: Record<string, string> = {
 
 type TabId =
   | "diary"
+  | "fiveYear"
   | "checkin"
   | "schedule"
   | "shopping"
@@ -46,6 +47,7 @@ type TabId =
 
 const TABS: { id: TabId; icon: string; label: string }[] = [
   { id: "diary",    icon: "📖", label: "心情日记" },
+  { id: "fiveYear", icon: "📚", label: "五年日记" },
   { id: "checkin",  icon: "✅", label: "打卡" },
   { id: "schedule", icon: "🗓", label: "本周计划" },
   { id: "shopping", icon: "🛒", label: "购物清单" },
@@ -156,6 +158,14 @@ type CheckinEntry = BaseItem & {
   totalCheckins: number;
   history: string[];
 };
+
+type FiveYearPhoto = BaseItem & {
+  date: string;
+  src: string;
+  name?: string;
+};
+
+type FiveYearPhotosData = Record<string, FiveYearPhoto[]>;
 
 // ─── localStorage hook (unchanged) ───────────────────────────────────────────
 function useLocalStorage<T>(key: string, initialValue: T) {
@@ -1797,6 +1807,301 @@ function ShoppingTab({ data, setData }: { data: ShoppingEntry[]; setData: Setter
   );
 }
 
+
+// ─── Five-year Diary ─────────────────────────────────────────────────────────
+const addDays = (dateStr: string, amount: number) => {
+  const d = toLocalDate(dateStr);
+  d.setDate(d.getDate() + amount);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const daysInMonth = (year: number, monthIndex: number) =>
+  new Date(year, monthIndex + 1, 0).getDate();
+
+const sameMonthDayInYear = (year: number, monthIndex: number, day: number) => {
+  const safeDay = Math.min(day, daysInMonth(year, monthIndex));
+  return `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
+};
+
+const fmtFullDate = (dateStr: string) =>
+  toLocalDate(dateStr).toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  });
+
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+const shrinkPhoto = (dataUrl: string, maxWidth = 900, quality = 0.72) =>
+  new Promise<string>((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const ratio = Math.min(1, maxWidth / img.width);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * ratio));
+      canvas.height = Math.max(1, Math.round(img.height * ratio));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+
+function FiveYearDiaryTab({
+  diary,
+  setDiary,
+  photos,
+  setPhotos,
+}: {
+  diary: DiaryEntry[];
+  setDiary: Setter<DiaryEntry[]>;
+  photos: FiveYearPhotosData;
+  setPhotos: Setter<FiveYearPhotosData>;
+}) {
+  const [selectedDate, setSelectedDate] = useState(today());
+  const [mood, setMood] = useState("😊");
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [photoPick, setPhotoPick] = useState<Record<string, number>>({});
+
+  const base = toLocalDate(selectedDate);
+  const baseYear = base.getFullYear();
+  const monthIndex = base.getMonth();
+  const day = base.getDate();
+  const yearRows = Array.from({ length: 6 }, (_, index) => {
+    const year = baseYear - index;
+    const date = sameMonthDayInYear(year, monthIndex, day);
+    return { year, date, index };
+  });
+  const writingDate = yearRows[0].date;
+
+  const saveTodayEntry = () => {
+    const cleanedContent = content.trim();
+    const cleanedTitle = title.trim();
+    if (!cleanedTitle && !cleanedContent) return;
+    setDiary((prev) => [
+      {
+        id: uid(),
+        createdAt: now(),
+        date: writingDate,
+        mood,
+        title: cleanedTitle || "五年日记",
+        content: cleanedContent,
+      },
+      ...prev,
+    ]);
+    setTitle("");
+    setContent("");
+    setMood("😊");
+  };
+
+  const entriesByDate = (date: string) =>
+    diary
+      .filter((entry) => entry.date === date)
+      .sort((a, b) => b.createdAt - a.createdAt);
+
+  const chooseRandomPhoto = (date: string) => {
+    const list = photos[date] || [];
+    if (list.length <= 1) return;
+    setPhotoPick((prev) => ({ ...prev, [date]: Math.floor(Math.random() * list.length) }));
+  };
+
+  const handlePhotoUpload = async (date: string, fileList: FileList | null) => {
+    const files = Array.from(fileList || []).filter((file) => file.type.startsWith("image/"));
+    if (files.length === 0) return;
+    try {
+      const newPhotos = await Promise.all(
+        files.slice(0, 8).map(async (file) => {
+          const raw = await readFileAsDataUrl(file);
+          const src = await shrinkPhoto(raw);
+          return {
+            id: uid(),
+            createdAt: now(),
+            date,
+            src,
+            name: file.name,
+          } as FiveYearPhoto;
+        })
+      );
+      setPhotos((prev) => ({
+        ...prev,
+        [date]: [...(prev[date] || []), ...newPhotos],
+      }));
+      setPhotoPick((prev) => ({ ...prev, [date]: Math.floor(Math.random() * newPhotos.length) }));
+    } catch {
+      alert("照片导入失败。可以少选几张，或者换一张体积小一点的照片试试。");
+    }
+  };
+
+  const deletePhoto = (date: string, id: string) => {
+    if (!confirmDelete()) return;
+    setPhotos((prev) => ({
+      ...prev,
+      [date]: (prev[date] || []).filter((p) => p.id !== id),
+    }));
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
+        <div>
+          <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>五年日记 📚</h2>
+          <div style={{ color: COLORS.muted, fontSize: 13, marginTop: 5 }}>
+            同一天，看见今年和过去 5 年的自己
+          </div>
+        </div>
+      </div>
+
+      <Card style={{ border: `2px solid ${COLORS.secondary}` }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", marginBottom: 12 }}>
+          <Btn small outline color={COLORS.muted} onClick={() => setSelectedDate(addDays(selectedDate, -1))}>← 前一天</Btn>
+          <Input
+            type="date"
+            value={selectedDate}
+            onChange={setSelectedDate}
+            style={{ width: 170, flex: "0 0 auto" }}
+          />
+          <Btn small outline color={COLORS.muted} onClick={() => setSelectedDate(addDays(selectedDate, 1))}>后一天 →</Btn>
+          <Btn small color={COLORS.secondary} onClick={() => setSelectedDate(today())}>回到今天</Btn>
+        </div>
+        <div style={{ color: COLORS.muted, fontSize: 13, lineHeight: 1.8 }}>
+          说明：iOS 网页不能无提示直接扫描系统相册；这里用“选择照片”让你授权导入当天照片，导入后会压缩成缩略图存在本地。
+        </div>
+      </Card>
+
+      <Card style={{ borderLeft: `4px solid ${COLORS.primary}` }}>
+        <div style={{ fontWeight: 900, color: COLORS.text, marginBottom: 12 }}>
+          给 {fmtFullDate(writingDate)} 写一篇
+        </div>
+        <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+          {MOODS.map((m) => (
+            <span
+              key={m}
+              onClick={() => setMood(m)}
+              style={{
+                fontSize: 25,
+                cursor: "pointer",
+                opacity: mood === m ? 1 : 0.35,
+                transform: mood === m ? "scale(1.18)" : "scale(1)",
+                transition: "opacity .15s, transform .15s",
+                display: "inline-block",
+              }}
+            >
+              {m}
+            </span>
+          ))}
+        </div>
+        <Input value={title} onChange={setTitle} placeholder="标题（可选）" style={{ marginBottom: 10 }} />
+        <Input value={content} onChange={setContent} placeholder="今天这一天，想留下什么？" multiline rows={4} style={{ marginBottom: 12 }} />
+        <Btn onClick={saveTodayEntry}>保存到心情日记 💕</Btn>
+      </Card>
+
+      {yearRows.map(({ year, date, index }) => {
+        const entries = entriesByDate(date);
+        const photoList = photos[date] || [];
+        const selectedPhoto = photoList.length > 0 ? photoList[(photoPick[date] ?? 0) % photoList.length] : null;
+        const label = index === 0 ? "这一年" : `${index}年前`;
+
+        return (
+          <Card key={date} style={{ borderLeft: `4px solid ${index === 0 ? COLORS.primary : COLORS.purple}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 12 }}>
+              <div>
+                <div style={{ color: COLORS.text, fontWeight: 900, fontSize: 19 }}>{year} 年</div>
+                <div style={{ color: COLORS.muted, fontSize: 13, marginTop: 3 }}>{fmtFullDate(date)}</div>
+              </div>
+              <Tag color={index === 0 ? COLORS.soft : "#F3EEFF"}>{label}</Tag>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              {selectedPhoto ? (
+                <div style={{ borderRadius: 18, overflow: "hidden", background: COLORS.light, boxShadow: "0 2px 10px rgba(61,34,24,.08)" }}>
+                  <img src={selectedPhoto.src} alt={`${date} 的照片`} style={{ width: "100%", maxHeight: 260, objectFit: "cover" }} />
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", padding: "10px 12px" }}>
+                    <span style={{ color: COLORS.muted, fontSize: 13 }}>已导入 {photoList.length} 张当天照片</span>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {photoList.length > 1 && <Btn small outline color={COLORS.purple} onClick={() => chooseRandomPhoto(date)}>随机换一张</Btn>}
+                      <Btn small outline color={COLORS.danger} onClick={() => deletePhoto(date, selectedPhoto.id)}>删除照片</Btn>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ border: `1.5px dashed rgba(155,123,114,.35)`, borderRadius: 18, padding: "18px 14px", background: "rgba(255,240,234,.45)", color: COLORS.muted, fontSize: 14, lineHeight: 1.8 }}>
+                  还没有导入 {year} 年这一天的照片。
+                </div>
+              )}
+              <label
+                className="diary-btn"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  marginTop: 10,
+                  borderRadius: 999,
+                  padding: "7px 16px",
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  color: COLORS.blue,
+                  border: `1.5px solid ${COLORS.blue}`,
+                  background: "transparent",
+                }}
+              >
+                选择/导入当天照片
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    handlePhotoUpload(date, e.currentTarget.files);
+                    e.currentTarget.value = "";
+                  }}
+                />
+              </label>
+            </div>
+
+            {entries.length === 0 ? (
+              <div style={{ color: COLORS.muted, fontSize: 14, background: COLORS.light, borderRadius: 14, padding: "12px 14px" }}>
+                这一天还没有日记。
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {entries.map((entry) => (
+                  <div key={entry.id} style={{ background: COLORS.light, borderRadius: 14, padding: "12px 14px" }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: entry.content ? 7 : 0 }}>
+                      <span style={{ fontSize: 22 }}>{entry.mood}</span>
+                      <strong style={{ color: COLORS.text, wordBreak: "break-word" }}>{entry.title}</strong>
+                    </div>
+                    {entry.content && (
+                      <div style={{ color: COLORS.muted, fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                        {entry.content}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── App Shell ────────────────────────────────────────────────────────────────
 export default function CoupleDiary() {
   const [activeTab, setActiveTab] = useState<TabId>("diary");
@@ -1811,10 +2116,12 @@ export default function CoupleDiary() {
   const [schedule,  setSchedule]  = useLocalStorage<ScheduleEntry[]>("couple-diary-schedule-v2",  []);
   const [shopping,  setShopping]  = useLocalStorage<ShoppingEntry[]>("couple-diary-shopping-v1",  []);
   const [reminders, setReminders] = useLocalStorage<ReminderEntry[]>("couple-diary-reminders-v2", []);
+  const [fiveYearPhotos, setFiveYearPhotos] = useLocalStorage<FiveYearPhotosData>("couple-diary-fiveyear-photos-v1", {});
 
   const renderTab = () => {
     switch (activeTab) {
       case "diary":    return <DiaryTab    data={diary}        setData={setDiary} />;
+      case "fiveYear": return <FiveYearDiaryTab diary={diary} setDiary={setDiary} photos={fiveYearPhotos} setPhotos={setFiveYearPhotos} />;
       case "checkin":  return <CheckinTab  data={checkins}     setData={setCheckins} />;
       case "schedule": return <ScheduleTab data={schedule}     setData={setSchedule} />;
       case "shopping": return <ShoppingTab data={shopping}     setData={setShopping} />;
