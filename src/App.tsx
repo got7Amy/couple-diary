@@ -78,6 +78,14 @@ const fmtDate = (d: string) =>
     weekday: "short",
   });
 
+const fmtDateWithYear = (d: string) =>
+  toLocalDate(d).toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  });
+
 const uid = () => Math.random().toString(36).slice(2, 10);
 const now = () => Date.now();
 
@@ -104,7 +112,7 @@ type FiveYearDiaryEntry = BaseItem & {
   content: string;
 };
 
-type FiveYearDiaryData = Record<string, FiveYearDiaryEntry>;
+type FiveYearDiaryData = Record<string, FiveYearDiaryEntry | FiveYearDiaryEntry[]>;
 
 type JokeEntry = BaseItem & {
   date: string;
@@ -240,21 +248,31 @@ const GlobalStyle = () => (
     /* Input focus glow */
     .diary-input:focus {
       border-color: ${COLORS.primary} !important;
-      box-shadow: 0 0 0 3px rgba(232, 115, 90, .16) !important;
+      box-shadow: 0 0 0 3.5px rgba(232, 115, 90, .18) !important;
       background: #fff !important;
       outline: none;
     }
 
     /* Button press feedback */
     .diary-btn {
-      transition: opacity .15s ease, transform .12s ease, box-shadow .15s ease !important;
+      transition: opacity .15s ease, transform .12s ease, box-shadow .18s ease !important;
     }
     .diary-btn:active {
-      transform: scale(.95) !important;
-      opacity: .88;
+      transform: scale(.94) !important;
+      opacity: .86;
     }
     .diary-btn:hover {
-      opacity: .92;
+      opacity: .93;
+      filter: brightness(1.04);
+    }
+
+    /* Card hover lift */
+    .diary-card-lift {
+      transition: box-shadow .22s ease, transform .22s ease !important;
+    }
+    .diary-card-lift:hover {
+      box-shadow: 0 4px 32px rgba(61,34,24,.13), 0 1px 4px rgba(61,34,24,.07), 0 0 0 1px rgba(240,190,170,.22) !important;
+      transform: translateY(-2px);
     }
 
     /* Tab button */
@@ -262,7 +280,19 @@ const GlobalStyle = () => (
       transition: background .2s ease, color .2s ease, box-shadow .2s ease !important;
     }
     .diary-tab:active {
-      transform: scale(.92);
+      transform: scale(.91);
+    }
+
+    /* Active tab underline pip */
+    .diary-tab-active::after {
+      content: '';
+      display: block;
+      height: 3px;
+      width: 70%;
+      margin: 3px auto 0;
+      border-radius: 99px;
+      background: ${COLORS.primary};
+      opacity: 0.8;
     }
 
     /* Empty state float */
@@ -277,20 +307,32 @@ const GlobalStyle = () => (
 
     /* Tab content fade-in */
     @keyframes diary-fadein {
-      from { opacity: 0; transform: translateY(7px); }
+      from { opacity: 0; transform: translateY(9px); }
       to   { opacity: 1; transform: translateY(0); }
     }
     .diary-fadein {
-      animation: diary-fadein .28s ease forwards;
+      animation: diary-fadein .3s ease forwards;
     }
 
     /* Checkin streak pulse */
     @keyframes diary-pulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(104, 174, 126, .45); }
-      55%       { box-shadow: 0 0 0 9px rgba(104, 174, 126, 0); }
+      0%, 100% { box-shadow: 0 0 0 0 rgba(104, 174, 126, .5); }
+      55%       { box-shadow: 0 0 0 10px rgba(104, 174, 126, 0); }
     }
     .diary-pulse {
       animation: diary-pulse 2.2s ease-in-out infinite;
+    }
+
+    /* Header shimmer */
+    @keyframes diary-shimmer {
+      0%   { background-position: -200% center; }
+      100% { background-position: 200% center; }
+    }
+
+    /* Stat card glow */
+    @keyframes diary-glow {
+      0%, 100% { opacity: .7; }
+      50%       { opacity: 1; }
     }
   `}</style>
 );
@@ -298,17 +340,20 @@ const GlobalStyle = () => (
 const Card = ({
   children,
   style = {},
+  lift = true,
 }: {
   children: React.ReactNode;
   style?: CSSProperties;
+  lift?: boolean;
 }) => (
   <div
+    className={lift ? "diary-card-lift" : ""}
     style={{
-      background: "linear-gradient(175deg, #ffffff 0%, #fffcfb 100%)",
+      background: "linear-gradient(175deg, #ffffff 0%, #fffaf8 100%)",
       borderRadius: 22,
       padding: "18px 20px",
       boxShadow:
-        "0 1px 2px rgba(61,34,24,.04), 0 4px 16px rgba(61,34,24,.09), 0 0 0 1px rgba(240,190,170,.18)",
+        "0 1px 2px rgba(61,34,24,.04), 0 4px 20px rgba(61,34,24,.08), 0 0 0 1px rgba(240,190,170,.16)",
       marginBottom: 14,
       width: "100%",
       maxWidth: "100%",
@@ -328,6 +373,7 @@ const Btn = ({
   outline = false,
   style = {},
   type = "button",
+  className = "",
 }: {
   onClick?: () => void;
   children: React.ReactNode;
@@ -336,25 +382,26 @@ const Btn = ({
   outline?: boolean;
   style?: CSSProperties;
   type?: "button" | "submit";
+  className?: string;
 }) => (
   <button
     type={type}
     onClick={onClick}
-    className="diary-btn"
+    className={`diary-btn${className ? ` ${className}` : ""}`}
     style={{
       background: outline ? "transparent" : (BTN_GRADIENTS[color] ?? color),
       color: outline ? color : "#fff",
       border: outline ? `1.5px solid ${color}` : "none",
       borderRadius: 999,
-      padding: small ? "7px 16px" : "11px 24px",
+      padding: small ? "8px 18px" : "11px 26px",
       fontSize: small ? 14 : 16,
       fontWeight: 700,
       cursor: "pointer",
       fontFamily: "inherit",
       whiteSpace: "nowrap",
       maxWidth: "100%",
-      letterSpacing: 0.3,
-      boxShadow: outline ? "none" : "0 2px 10px rgba(0,0,0,.14)",
+      letterSpacing: 0.4,
+      boxShadow: outline ? "none" : `0 2px 12px rgba(0,0,0,.13), 0 1px 3px rgba(0,0,0,.08)`,
       ...style,
     }}
   >
@@ -383,11 +430,11 @@ const Input = ({
     width: "100%",
     maxWidth: "100%",
     borderRadius: 14,
-    border: `1.5px solid rgba(240, 195, 175, .75)`,
-    padding: "12px 15px",
+    border: `1.5px solid rgba(232, 185, 165, .65)`,
+    padding: "12px 16px",
     fontSize: 16,
     fontFamily: "inherit",
-    background: "rgba(255, 245, 240, .65)",
+    background: "rgba(255, 248, 244, .7)",
     color: COLORS.text,
     outline: "none",
     resize: "vertical",
@@ -420,23 +467,27 @@ const Input = ({
 const Tag = ({
   color = COLORS.soft,
   children,
+  textColor,
 }: {
   color?: string;
   children: React.ReactNode;
+  textColor?: string;
 }) => (
   <span
     style={{
       background: color,
-      color: COLORS.accent,
+      color: textColor ?? COLORS.accent,
       borderRadius: 999,
-      padding: "3px 11px",
+      padding: "3px 12px",
       fontSize: 12,
-      fontWeight: 700,
+      fontWeight: 800,
       display: "inline-flex",
       alignItems: "center",
       maxWidth: "100%",
-      letterSpacing: 0.2,
-      border: "1px solid rgba(255,255,255,.65)",
+      letterSpacing: 0.3,
+      border: "1px solid rgba(255,255,255,.7)",
+      boxShadow: "0 1px 4px rgba(61,34,24,.07)",
+      whiteSpace: "nowrap",
     }}
   >
     {children}
@@ -444,9 +495,17 @@ const Tag = ({
 );
 
 const EmptyState = ({ emoji, text }: { emoji: string; text: string }) => (
-  <div style={{ textAlign: "center", padding: "52px 18px", color: COLORS.muted }}>
-    <div className="diary-float" style={{ fontSize: 50, marginBottom: 16 }}>{emoji}</div>
-    <div style={{ fontSize: 15, lineHeight: 1.9, maxWidth: 240, margin: "0 auto" }}>{text}</div>
+  <div style={{
+    textAlign: "center",
+    padding: "52px 18px",
+    color: COLORS.muted,
+    background: "linear-gradient(160deg, rgba(255,246,242,.9) 0%, rgba(255,255,255,.7) 100%)",
+    borderRadius: 22,
+    border: "1.5px dashed rgba(232,115,90,.2)",
+    marginBottom: 14,
+  }}>
+    <div className="diary-float" style={{ fontSize: 52, marginBottom: 16, filter: "drop-shadow(0 4px 12px rgba(232,115,90,.2))" }}>{emoji}</div>
+    <div style={{ fontSize: 15, lineHeight: 1.9, maxWidth: 240, margin: "0 auto", fontWeight: 500 }}>{text}</div>
   </div>
 );
 
@@ -654,7 +713,10 @@ function DiaryTab({ data, setData }: { data: DiaryEntry[]; setData: Setter<Diary
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>心情日记 📖</h2>
+        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.primary, flexShrink: 0 }} />
+          心情日记 📖
+        </h2>
         <Btn onClick={() => setAdding(!adding)} small>
           {adding ? "取消" : "+ 写日记"}
         </Btn>
@@ -683,7 +745,7 @@ function DiaryTab({ data, setData }: { data: DiaryEntry[]; setData: Setter<Diary
                   <span style={{ fontSize: 30, marginRight: 8 }}>{entry.mood}</span>
                   <strong style={{ color: COLORS.text, fontSize: 18, wordBreak: "break-word" }}>{entry.title}</strong>
                 </div>
-                <Tag>{fmtDate(entry.date)}</Tag>
+                <Tag>{fmtDateWithYear(entry.date)}</Tag>
               </div>
               {entry.content && (
                 <p style={{ margin: "12px 0", color: COLORS.muted, fontSize: 16, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>
@@ -745,7 +807,10 @@ function JokesTab({ data, setData }: { data: JokeEntry[]; setData: Setter<JokeEn
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>笑话库 😂</h2>
+        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.yellow, flexShrink: 0 }} />
+          笑话库 😂
+        </h2>
         <Btn onClick={() => setAdding(!adding)} small>
           {adding ? "取消" : "+ 记笑话"}
         </Btn>
@@ -850,7 +915,10 @@ function CalendarTab({ data, setData }: { data: CalendarData; setData: Setter<Ca
 
   return (
     <div>
-      <h2 style={{ margin: "0 0 18px", color: COLORS.text, fontSize: 23, fontWeight: 900 }}>日历记录 📅</h2>
+      <h2 style={{ margin: "0 0 18px", color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.blue, flexShrink: 0 }} />
+        日历记录 📅
+      </h2>
 
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -865,9 +933,9 @@ function CalendarTab({ data, setData }: { data: CalendarData; setData: Setter<Ca
           >›</button>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 4, textAlign: "center" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 3, textAlign: "center" }}>
           {["日","一","二","三","四","五","六"].map((d) => (
-            <div key={d} style={{ fontSize: 13, color: COLORS.muted, fontWeight: 800, paddingBottom: 6 }}>{d}</div>
+            <div key={d} style={{ fontSize: 12, color: COLORS.muted, fontWeight: 800, paddingBottom: 8, letterSpacing: 0.5 }}>{d}</div>
           ))}
 
           {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
@@ -884,8 +952,8 @@ function CalendarTab({ data, setData }: { data: CalendarData; setData: Setter<Ca
                 key={d}
                 onClick={() => setSelected(key)}
                 style={{
-                  padding: "9px 3px",
-                  borderRadius: 11,
+                  padding: "9px 2px",
+                  borderRadius: 12,
                   cursor: "pointer",
                   background: isSelected
                     ? BTN_GRADIENTS[COLORS.primary]
@@ -897,19 +965,20 @@ function CalendarTab({ data, setData }: { data: CalendarData; setData: Setter<Ca
                   position: "relative",
                   minWidth: 0,
                   transition: "background .15s",
+                  boxShadow: isSelected ? "0 2px 8px rgba(232,112,86,.28)" : "none",
                 }}
               >
                 {d}
                 {hasNote && (
                   <div style={{
                     position: "absolute",
-                    bottom: 2,
+                    bottom: 3,
                     left: "50%",
                     transform: "translateX(-50%)",
                     width: 5,
                     height: 5,
                     borderRadius: "50%",
-                    background: isSelected ? "#fff" : COLORS.secondary,
+                    background: isSelected ? "rgba(255,255,255,.85)" : COLORS.secondary,
                   }} />
                 )}
               </div>
@@ -1010,7 +1079,10 @@ function WhisperTab({ data, setData }: { data: WhisperEntry[]; setData: Setter<W
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>悄悄话 💌</h2>
+        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.purple, flexShrink: 0 }} />
+          悄悄话 💌
+        </h2>
         <Btn onClick={() => setAdding(!adding)} small color={COLORS.purple}>
           {adding ? "取消" : "+ 写悄悄话"}
         </Btn>
@@ -1174,7 +1246,10 @@ function WishesTab({ data, setData }: { data: WishEntry[]; setData: Setter<WishE
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>愿望清单 ✨</h2>
+        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.yellow, flexShrink: 0 }} />
+          愿望清单 ✨
+        </h2>
         <Btn onClick={() => setAdding(!adding)} small color={COLORS.yellow} style={{ color: COLORS.text }}>
           {adding ? "取消" : "+ 许愿"}
         </Btn>
@@ -1350,7 +1425,10 @@ function ScheduleTab({ data, setData }: { data: ScheduleEntry[]; setData: Setter
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>本周计划 🗓</h2>
+        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.blue, flexShrink: 0 }} />
+          本周计划 🗓
+        </h2>
         <Btn onClick={() => setAdding(!adding)} small color={COLORS.blue}>
           {adding ? "取消" : "+ 加计划"}
         </Btn>
@@ -1532,7 +1610,10 @@ function ReminderTab({ data, setData }: { data: ReminderEntry[]; setData: Setter
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>提醒他 🔔</h2>
+        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.primary, flexShrink: 0 }} />
+          提醒他 🔔
+        </h2>
         <Btn onClick={() => setAdding(!adding)} small>
           {adding ? "取消" : "+ 加提醒"}
         </Btn>
@@ -1626,7 +1707,10 @@ function CheckinTab({ data, setData }: { data: CheckinEntry[]; setData: Setter<C
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>打卡 ✅</h2>
+        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.green, flexShrink: 0 }} />
+          打卡 ✅
+        </h2>
         <Btn onClick={() => setAdding(!adding)} small color={COLORS.green}>
           {adding ? "取消" : "+ 添加项目"}
         </Btn>
@@ -1660,22 +1744,22 @@ function CheckinTab({ data, setData }: { data: CheckinEntry[]; setData: Setter<C
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, marginBottom: 14 }}>
               {current === 0 && (
-                <div style={{ background: COLORS.light, borderRadius: 14, padding: "10px 12px" }}>
-                  <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>离上次打卡</div>
-                  <div style={{ color: COLORS.text, fontSize: 22, fontWeight: 900, marginTop: 2 }}>{lastGap === null ? "—" : `${lastGap}天`}</div>
+                <div style={{ background: "linear-gradient(135deg, #FFF5F0 0%, #FFEDE4 100%)", borderRadius: 16, padding: "12px 12px", border: "1px solid rgba(240,190,170,.3)" }}>
+                  <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase" }}>离上次打卡</div>
+                  <div style={{ color: COLORS.text, fontSize: 24, fontWeight: 900, marginTop: 4 }}>{lastGap === null ? "—" : `${lastGap}天`}</div>
                 </div>
               )}
-              <div style={{ background: COLORS.light, borderRadius: 14, padding: "10px 12px" }}>
-                <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>已坚持</div>
-                <div style={{ color: current > 0 ? COLORS.green : COLORS.text, fontSize: 22, fontWeight: 900, marginTop: 2 }}>{current}天</div>
+              <div style={{ background: current > 0 ? "linear-gradient(135deg, #E8F8EE 0%, #D4F0DC 100%)" : "linear-gradient(135deg, #FFF5F0 0%, #FFEDE4 100%)", borderRadius: 16, padding: "12px 12px", border: `1px solid ${current > 0 ? "rgba(104,174,126,.25)" : "rgba(240,190,170,.3)"}` }}>
+                <div style={{ color: current > 0 ? COLORS.green : COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase" }}>已坚持</div>
+                <div style={{ color: current > 0 ? COLORS.green : COLORS.text, fontSize: 24, fontWeight: 900, marginTop: 4 }}>{current}天</div>
               </div>
-              <div style={{ background: COLORS.light, borderRadius: 14, padding: "10px 12px" }}>
-                <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>最长坚持</div>
-                <div style={{ color: COLORS.text, fontSize: 22, fontWeight: 900, marginTop: 2 }}>{item.longestStreak || 0}天</div>
+              <div style={{ background: "linear-gradient(135deg, #EEF4FF 0%, #E0ECFF 100%)", borderRadius: 16, padding: "12px 12px", border: "1px solid rgba(104,152,184,.2)" }}>
+                <div style={{ color: COLORS.blue, fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase" }}>最长坚持</div>
+                <div style={{ color: COLORS.text, fontSize: 24, fontWeight: 900, marginTop: 4 }}>{item.longestStreak || 0}天</div>
               </div>
-              <div style={{ background: COLORS.light, borderRadius: 14, padding: "10px 12px" }}>
-                <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>累计打卡</div>
-                <div style={{ color: COLORS.text, fontSize: 22, fontWeight: 900, marginTop: 2 }}>{item.totalCheckins || 0}次</div>
+              <div style={{ background: "linear-gradient(135deg, #FFF8ED 0%, #FFF0D0 100%)", borderRadius: 16, padding: "12px 12px", border: "1px solid rgba(238,184,72,.2)" }}>
+                <div style={{ color: COLORS.yellow, fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase" }}>累计打卡</div>
+                <div style={{ color: COLORS.text, fontSize: 24, fontWeight: 900, marginTop: 4 }}>{item.totalCheckins || 0}次</div>
               </div>
             </div>
 
@@ -1762,7 +1846,7 @@ function ShoppingTab({ data, setData }: { data: ShoppingEntry[]; setData: Setter
   );
 
   const todo = data.filter((item) => !item.bought).sort((a, b) => b.createdAt - a.createdAt);
-  const bought = data.filter((item) => item.bought).sort((a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt);
+  const bought = data.filter((item) => item.bought).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || b.createdAt - a.createdAt);
 
   const ShoppingCard = ({ item }: { item: ShoppingEntry }) => (
     <Card style={{ borderLeft: `4px solid ${item.bought ? COLORS.green : COLORS.secondary}`, opacity: item.bought ? 0.65 : 1 }}>
@@ -1817,7 +1901,10 @@ function ShoppingTab({ data, setData }: { data: ShoppingEntry[]; setData: Setter
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>购物清单 🛒</h2>
+        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.green, flexShrink: 0 }} />
+          购物清单 🛒
+        </h2>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
           {bought.length > 0 && (
             <Btn onClick={clearBought} small outline color={COLORS.danger}>清空已买</Btn>
@@ -1919,28 +2006,37 @@ function FiveYearDiaryTab({
   data,
   setData,
   diary,
+  setDiary,
   photos,
   setPhotos,
 }: {
   data: FiveYearDiaryData;
   setData: Setter<FiveYearDiaryData>;
   diary: DiaryEntry[];
+  setDiary: Setter<DiaryEntry[]>;
   photos: FiveYearPhotosData;
   setPhotos: Setter<FiveYearPhotosData>;
 }) {
   const [selectedDate, setSelectedDate] = useState(today());
   const baseYear = new Date().getFullYear();
   const currentDate = sameMonthDayInYear(selectedDate, baseYear);
-  const [draft, setDraft] = useState(data[currentDate]?.content || "");
-  const [photoPick, setPhotoPick] = useState<Record<string, number>>({});
-
-  useEffect(() => {
-    setDraft(data[currentDate]?.content || "");
-  }, [currentDate, data]);
+  const blankFiveYearForm = (date = currentDate) => ({ date, content: "" });
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState(blankFiveYearForm(currentDate));
+  const [editTarget, setEditTarget] = useState<{ source: "own" | "legacy"; id: string } | null>(null);
+  const [editForm, setEditForm] = useState(blankFiveYearForm(currentDate));
 
   const displayDates = Array.from({ length: 6 }, (_, index) =>
     sameMonthDayInYear(currentDate, baseYear - index)
   );
+
+  const getFiveYearEntries = (value?: FiveYearDiaryEntry | FiveYearDiaryEntry[]) =>
+    (Array.isArray(value) ? value : value ? [value] : []).filter(Boolean);
+
+  const getEntriesForDate = (date: string) =>
+    getFiveYearEntries(data[date])
+      .filter((entry) => Boolean(entry.content?.trim()))
+      .sort((a, b) => b.createdAt - a.createdAt);
 
   const moodEntriesByDate = diary.reduce<Record<string, DiaryEntry[]>>((acc, entry) => {
     if (!entry.date || isFiveYearDiaryEntry(entry)) return acc;
@@ -1956,35 +2052,110 @@ function FiveYearDiaryTab({
     return acc;
   }, {});
 
-  const saveCurrentEntry = () => {
-    const content = draft.trim();
-    if (!content) return;
-    setData((prev) => ({
-      ...prev,
-      [currentDate]: prev[currentDate]
-        ? { ...prev[currentDate], content, updatedAt: now() }
-        : { id: uid(), createdAt: now(), date: currentDate, content },
-    }));
-  };
-
-  const clearCurrentEntry = () => {
-    if (!data[currentDate]) {
-      setDraft("");
+  const openNewEntryForm = () => {
+    if (adding) {
+      setAdding(false);
+      setForm(blankFiveYearForm(currentDate));
       return;
     }
+    setEditTarget(null);
+    setForm(blankFiveYearForm(currentDate));
+    setAdding(true);
+  };
+
+  const saveNewEntry = () => {
+    const entryDate = form.date || currentDate;
+    const content = form.content.trim();
+    if (!content) return;
+    const newEntry: FiveYearDiaryEntry = {
+      id: uid(),
+      createdAt: now(),
+      date: entryDate,
+      content,
+    };
+    setData((prev) => ({
+      ...prev,
+      [entryDate]: [newEntry, ...getFiveYearEntries(prev[entryDate])],
+    }));
+    setForm(blankFiveYearForm(currentDate));
+    setAdding(false);
+    setSelectedDate(sameMonthDayInYear(entryDate, baseYear));
+  };
+
+  const deleteOwnEntry = (entry: FiveYearDiaryEntry) => {
     if (!confirmDelete()) return;
     setData((prev) => {
       const next = { ...prev };
-      delete next[currentDate];
+      const list = getFiveYearEntries(next[entry.date]).filter((item) => item.id !== entry.id);
+      if (list.length > 0) next[entry.date] = list;
+      else delete next[entry.date];
       return next;
     });
-    setDraft("");
+    if (editTarget?.source === "own" && editTarget.id === entry.id) setEditTarget(null);
   };
 
-  const chooseRandomPhoto = (date: string) => {
-    const list = photos[date] || [];
-    if (list.length <= 1) return;
-    setPhotoPick((prev) => ({ ...prev, [date]: Math.floor(Math.random() * list.length) }));
+  const deleteLegacyEntry = (entry: DiaryEntry) => {
+    if (!confirmDelete()) return;
+    setDiary((prev) => prev.filter((item) => item.id !== entry.id));
+    if (editTarget?.source === "legacy" && editTarget.id === entry.id) setEditTarget(null);
+  };
+
+  const startEditOwnEntry = (entry: FiveYearDiaryEntry) => {
+    setAdding(false);
+    setEditTarget({ source: "own", id: entry.id });
+    setEditForm({ date: entry.date, content: entry.content });
+  };
+
+  const startEditLegacyEntry = (entry: DiaryEntry) => {
+    setAdding(false);
+    setEditTarget({ source: "legacy", id: entry.id });
+    setEditForm({ date: entry.date, content: entry.content || entry.title || "" });
+  };
+
+  const saveEdit = () => {
+    if (!editTarget) return;
+    const entryDate = editForm.date || currentDate;
+    const content = editForm.content.trim();
+    if (!content) return;
+
+    if (editTarget.source === "own") {
+      setData((prev) => {
+        const next = { ...prev };
+        let updatedEntry: FiveYearDiaryEntry | null = null;
+
+        Object.keys(next).forEach((date) => {
+          const list = getFiveYearEntries(next[date]);
+          const found = list.find((entry) => entry.id === editTarget.id);
+          const filtered = list.filter((entry) => entry.id !== editTarget.id);
+          if (found) updatedEntry = { ...found, date: entryDate, content, updatedAt: now() };
+          if (filtered.length > 0) next[date] = filtered;
+          else delete next[date];
+        });
+
+        if (!updatedEntry) return prev;
+        next[entryDate] = [updatedEntry, ...getFiveYearEntries(next[entryDate])];
+        return next;
+      });
+    } else {
+      setDiary((prev) =>
+        prev.map((entry) =>
+          entry.id === editTarget.id
+            ? {
+                ...entry,
+                date: entryDate,
+                title: entry.title || "五年日记",
+                content,
+                source: "fiveYear",
+                updatedAt: now(),
+              }
+            : entry
+        )
+      );
+    }
+
+    setEditTarget(null);
+    setEditForm(blankFiveYearForm(currentDate));
+    setSelectedDate(sameMonthDayInYear(entryDate, baseYear));
   };
 
   const handlePhotoUpload = async (date: string, fileList: FileList | null) => {
@@ -2004,12 +2175,10 @@ function FiveYearDiaryTab({
           } as FiveYearPhoto;
         })
       );
-      const firstNewPhotoIndex = photos[date]?.length || 0;
       setPhotos((prev) => ({
         ...prev,
         [date]: [...(prev[date] || []), ...newPhotos],
       }));
-      setPhotoPick((prev) => ({ ...prev, [date]: firstNewPhotoIndex }));
     } catch {
       alert("照片导入失败。可以少选几张，或者换一张体积小一点的照片试试。");
     }
@@ -2024,35 +2193,52 @@ function FiveYearDiaryTab({
       else delete next[date];
       return next;
     });
-    setPhotoPick((prev) => ({ ...prev, [date]: 0 }));
   };
+
+  const FiveYearFields = ({
+    value,
+    setValue,
+  }: {
+    value: { date: string; content: string };
+    setValue: Setter<{ date: string; content: string }>;
+  }) => (
+    <>
+      <Input
+        type="date"
+        value={value.date}
+        onChange={(v) => setValue((p) => ({ ...p, date: v || currentDate }))}
+        style={{ marginBottom: 10, width: 180 }}
+      />
+      <Input
+        value={value.content}
+        onChange={(v) => setValue((p) => ({ ...p, content: v }))}
+        placeholder="今天一句话也可以：发生了什么、心情怎样、想记住什么…"
+        multiline
+        rows={5}
+        style={{ marginBottom: 12 }}
+      />
+    </>
+  );
 
   const PhotoBlock = ({ date }: { date: string }) => {
     const photoList = photos[date] || [];
-    const selectedPhoto = photoList.length > 0 ? photoList[(photoPick[date] ?? 0) % photoList.length] : null;
 
     return (
-      <div style={{ marginBottom: 12 }}>
-        {selectedPhoto ? (
-          <div style={{ borderRadius: 18, overflow: "hidden", background: COLORS.light, boxShadow: "0 2px 10px rgba(61,34,24,.08)" }}>
-            <img
-              src={selectedPhoto.src}
-              alt={`${date} 的照片`}
-              style={{ width: "100%", maxHeight: 320, objectFit: "cover" }}
-            />
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", padding: "10px 12px" }}>
-              <span style={{ color: COLORS.muted, fontSize: 13 }}>📸 已定位到 {date} · 共 {photoList.length} 张</span>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {photoList.length > 1 && (
-                  <Btn small outline color={COLORS.purple} onClick={() => chooseRandomPhoto(date)}>随机换一张</Btn>
-                )}
-                <Btn small outline color={COLORS.danger} onClick={() => deletePhoto(date, selectedPhoto.id)}>删除照片</Btn>
+      <div style={{ marginBottom: photoList.length > 0 ? 12 : 8 }}>
+        {photoList.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 10 }}>
+            {photoList.map((photo) => (
+              <div key={photo.id} style={{ borderRadius: 18, overflow: "hidden", background: COLORS.light, boxShadow: "0 2px 10px rgba(61,34,24,.08)" }}>
+                <img
+                  src={photo.src}
+                  alt="五年日记照片"
+                  style={{ width: "100%", height: 170, objectFit: "cover" }}
+                />
+                <div style={{ padding: "8px 10px", display: "flex", justifyContent: "flex-end" }}>
+                  <Btn small outline color={COLORS.danger} onClick={() => deletePhoto(date, photo.id)}>删除照片</Btn>
+                </div>
               </div>
-            </div>
-          </div>
-        ) : (
-          <div style={{ border: `1.5px dashed rgba(155,123,114,.35)`, borderRadius: 18, padding: "16px 14px", background: "rgba(255,240,234,.45)", color: COLORS.muted, fontSize: 14, lineHeight: 1.8 }}>
-            还没有这一天的照片。点下面按钮导入后，会自动归到这一张日期卡片里。
+            ))}
           </div>
         )}
 
@@ -2061,7 +2247,7 @@ function FiveYearDiaryTab({
           style={{
             display: "inline-flex",
             alignItems: "center",
-            marginTop: 10,
+            marginTop: photoList.length > 0 ? 2 : 0,
             borderRadius: 999,
             padding: "7px 16px",
             fontSize: 14,
@@ -2072,7 +2258,7 @@ function FiveYearDiaryTab({
             background: "transparent",
           }}
         >
-          选择/导入这一天照片
+          添加照片
           <input
             type="file"
             accept="image/*"
@@ -2088,16 +2274,52 @@ function FiveYearDiaryTab({
     );
   };
 
+  const FiveYearEntryBlock = ({
+    entry,
+    source,
+  }: {
+    entry: FiveYearDiaryEntry | DiaryEntry;
+    source: "own" | "legacy";
+  }) => {
+    const editing = editTarget?.source === source && editTarget.id === entry.id;
+    return (
+      <div style={{ background: COLORS.light, borderRadius: 16, padding: "12px 14px", marginBottom: 10 }}>
+        {editing ? (
+          <>
+            <FiveYearFields value={editForm} setValue={setEditForm} />
+            <FormActions onSave={saveEdit} onCancel={() => setEditTarget(null)} saveText="保存修改" color={COLORS.purple} />
+          </>
+        ) : (
+          <>
+            <div style={{ color: COLORS.text, fontSize: 16, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word", marginBottom: 10 }}>
+              {entry.content || ("title" in entry ? entry.title : "")}
+            </div>
+            <ActionButtons
+              onEdit={() => source === "own" ? startEditOwnEntry(entry as FiveYearDiaryEntry) : startEditLegacyEntry(entry as DiaryEntry)}
+              onDelete={() => source === "own" ? deleteOwnEntry(entry as FiveYearDiaryEntry) : deleteLegacyEntry(entry as DiaryEntry)}
+            />
+          </>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
         <div>
-          <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>五年日记 📚</h2>
-          <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6 }}>
+          <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.purple, flexShrink: 0 }} />
+            五年日记 📚
+          </h2>
+          <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6, paddingLeft: 12 }}>
             同一天，看看今年和过去五年的自己。
           </div>
         </div>
-        <Btn onClick={() => setSelectedDate(today())} small outline color={COLORS.primary}>回到今天</Btn>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <Btn onClick={() => setSelectedDate(today())} small outline color={COLORS.primary}>回到今天</Btn>
+          <Btn onClick={openNewEntryForm} small color={COLORS.purple}>{adding ? "取消" : "+ 写日记"}</Btn>
+        </div>
       </div>
 
       <Card style={{ border: `2px solid ${COLORS.secondary}` }}>
@@ -2113,19 +2335,30 @@ function FiveYearDiaryTab({
         </div>
       </Card>
 
+      {adding && (
+        <Card style={{ border: `2px solid ${COLORS.purple}` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+            <Tag color="#F3EEFF">五年日记</Tag>
+            <span style={{ color: COLORS.muted, fontSize: 13 }}>只保存在五年日记，不会出现在心情日记列表里。</span>
+          </div>
+          <FiveYearFields value={form} setValue={setForm} />
+          <FormActions onSave={saveNewEntry} onCancel={() => { setAdding(false); setForm(blankFiveYearForm(currentDate)); }} saveText="保存这篇日记 📚" color={COLORS.purple} />
+        </Card>
+      )}
+
       {displayDates.map((date) => {
-        const ownEntry = data[date];
+        const ownEntries = getEntriesForDate(date);
         const legacyEntries = (legacyFiveYearEntriesByDate[date] || []).sort((a, b) => b.createdAt - a.createdAt);
         const moodEntries = (moodEntriesByDate[date] || []).sort((a, b) => b.createdAt - a.createdAt);
         const photoList = photos[date] || [];
-        const hasAnything = Boolean(ownEntry?.content) || legacyEntries.length > 0 || moodEntries.length > 0 || photoList.length > 0;
+        const hasAnything = ownEntries.length > 0 || legacyEntries.length > 0 || moodEntries.length > 0 || photoList.length > 0;
 
         return (
           <Card key={date} style={{ borderLeft: `4px solid ${date === currentDate ? COLORS.purple : COLORS.secondary}` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
               <div>
                 <div style={{ color: COLORS.text, fontWeight: 900, fontSize: 18 }}>
-                  {toLocalDate(date).getFullYear()} · {fmtDate(date)}
+                  {toLocalDate(date).getFullYear()}年
                 </div>
                 <div style={{ color: COLORS.muted, fontSize: 13, marginTop: 3 }}>{getEntryYearLabel(date, baseYear)}</div>
               </div>
@@ -2134,22 +2367,12 @@ function FiveYearDiaryTab({
 
             <PhotoBlock date={date} />
 
-            {ownEntry?.content && (
-              <div style={{ background: COLORS.light, borderRadius: 16, padding: "12px 14px", marginBottom: 10 }}>
-                <div style={{ color: COLORS.purple, fontWeight: 900, fontSize: 13, marginBottom: 6 }}>五年日记</div>
-                <div style={{ color: COLORS.text, fontSize: 16, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                  {ownEntry.content}
-                </div>
-              </div>
-            )}
+            {ownEntries.map((entry) => (
+              <FiveYearEntryBlock key={entry.id} entry={entry} source="own" />
+            ))}
 
             {legacyEntries.map((entry) => (
-              <div key={entry.id} style={{ background: COLORS.light, borderRadius: 16, padding: "12px 14px", marginBottom: 10 }}>
-                <div style={{ color: COLORS.purple, fontWeight: 900, fontSize: 13, marginBottom: 6 }}>五年日记</div>
-                <div style={{ color: COLORS.text, fontSize: 16, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                  {entry.content || entry.title}
-                </div>
-              </div>
+              <FiveYearEntryBlock key={entry.id} entry={entry} source="legacy" />
             ))}
 
             {moodEntries.map((entry) => (
@@ -2157,7 +2380,6 @@ function FiveYearDiaryTab({
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 22 }}>{entry.mood}</span>
                   <strong style={{ color: COLORS.text, fontSize: 16, wordBreak: "break-word" }}>{entry.title || "心情日记"}</strong>
-                  <Tag>心情日记</Tag>
                 </div>
                 {entry.content && (
                   <div style={{ color: COLORS.muted, fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
@@ -2175,25 +2397,6 @@ function FiveYearDiaryTab({
           </Card>
         );
       })}
-
-      <Card style={{ border: `2px solid ${COLORS.secondary}`, marginTop: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-          <Tag color="#F3EEFF">{fmtFullDate(currentDate)}</Tag>
-          <span style={{ color: COLORS.muted, fontSize: 13 }}>输入内容只保存在五年日记，不会出现在心情日记列表里。</span>
-        </div>
-        <Input
-          value={draft}
-          onChange={setDraft}
-          placeholder="今天一句话也可以：发生了什么、心情怎样、想记住什么…"
-          multiline
-          rows={5}
-          style={{ marginBottom: 12 }}
-        />
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Btn onClick={saveCurrentEntry} color={COLORS.purple} small>保存五年日记</Btn>
-          <Btn onClick={clearCurrentEntry} outline color={COLORS.danger} small>清空这天</Btn>
-        </div>
-      </Card>
     </div>
   );
 }
@@ -2218,7 +2421,7 @@ export default function CoupleDiary() {
   const renderTab = () => {
     switch (activeTab) {
       case "diary":    return <DiaryTab    data={diary}        setData={setDiary} />;
-      case "fiveYear": return <FiveYearDiaryTab data={fiveYearDiary} setData={setFiveYearDiary} diary={diary} photos={fiveYearPhotos} setPhotos={setFiveYearPhotos} />;
+      case "fiveYear": return <FiveYearDiaryTab data={fiveYearDiary} setData={setFiveYearDiary} diary={diary} setDiary={setDiary} photos={fiveYearPhotos} setPhotos={setFiveYearPhotos} />;
       case "checkin":  return <CheckinTab  data={checkins}     setData={setCheckins} />;
       case "schedule": return <ScheduleTab data={schedule}     setData={setSchedule} />;
       case "shopping": return <ShoppingTab data={shopping}     setData={setShopping} />;
@@ -2249,37 +2452,47 @@ export default function CoupleDiary() {
       {/* ── Header ── */}
       <div
         style={{
-          background: "linear-gradient(135deg, #C85840 0%, #E07055 30%, #EA8060 60%, #F4A880 100%)",
-          padding: "24px 16px 16px",
+          background: "linear-gradient(135deg, #B84830 0%, #D96045 25%, #E87858 55%, #F09870 80%, #F8B890 100%)",
+          padding: "20px 20px 18px",
           textAlign: "center",
           position: "sticky",
           top: 0,
           zIndex: 100,
           width: "100%",
           maxWidth: "100%",
-          boxShadow: "0 2px 24px rgba(200, 88, 64, .32)",
+          boxShadow: "0 2px 28px rgba(184, 72, 48, .35)",
         }}
       >
         <div style={{
-          fontSize: 11,
-          color: "rgba(255,255,255,.72)",
-          letterSpacing: 4,
-          marginBottom: 4,
+          fontSize: 10,
+          color: "rgba(255,255,255,.65)",
+          letterSpacing: 5,
+          marginBottom: 3,
           textTransform: "uppercase",
-          fontWeight: 600,
+          fontWeight: 700,
         }}>
           OUR LITTLE WORLD
         </div>
         <h1 style={{
           margin: 0,
           color: "#fff",
-          fontSize: 28,
+          fontSize: 26,
           fontWeight: 900,
           letterSpacing: 0.5,
-          textShadow: "0 1px 10px rgba(0,0,0,.18)",
+          textShadow: "0 2px 14px rgba(0,0,0,.2)",
+          lineHeight: 1.3,
         }}>
           💑 我们的日记本
         </h1>
+        <div style={{
+          marginTop: 4,
+          fontSize: 11,
+          color: "rgba(255,255,255,.55)",
+          letterSpacing: 1,
+          fontWeight: 500,
+        }}>
+          {new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}
+        </div>
       </div>
 
       {/* ── Tab Bar ── */}
@@ -2290,17 +2503,17 @@ export default function CoupleDiary() {
           overflowX: "auto",
           overflowY: "hidden",
           gap: 2,
-          background: "rgba(255,255,255,.96)",
-          backdropFilter: "blur(16px)",
-          WebkitBackdropFilter: "blur(16px)",
-          borderBottom: "1px solid rgba(240,195,175,.45)",
+          background: "rgba(255,252,250,.97)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          borderBottom: "1px solid rgba(240,195,175,.4)",
           position: "sticky",
-          top: 91,
+          top: 88,
           zIndex: 99,
           WebkitOverflowScrolling: "touch",
           width: "100%",
           maxWidth: "100%",
-          padding: "5px 4px 3px",
+          padding: "6px 6px 4px",
         }}
       >
         {TABS.map((tab) => {
@@ -2309,22 +2522,22 @@ export default function CoupleDiary() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className="diary-tab"
+              className={`diary-tab${active ? " diary-tab-active" : ""}`}
               style={{
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                padding: "6px 12px 7px",
+                padding: "6px 13px 5px",
                 border: "none",
                 background: active
-                  ? "linear-gradient(145deg, rgba(232,112,86,.15), rgba(244,168,138,.10))"
+                  ? "linear-gradient(145deg, rgba(232,112,86,.18), rgba(244,168,138,.11))"
                   : "transparent",
-                borderRadius: 12,
+                borderRadius: 14,
                 cursor: "pointer",
                 color: active ? COLORS.primary : COLORS.muted,
                 fontFamily: "inherit",
                 flex: "0 0 auto",
-                boxShadow: active ? "0 1px 8px rgba(232,112,86,.14), 0 0 0 1px rgba(232,112,86,.12)" : "none",
+                boxShadow: active ? "0 1px 10px rgba(232,112,86,.16), 0 0 0 1.5px rgba(232,112,86,.15)" : "none",
               }}
             >
               <span style={{ fontSize: 20, lineHeight: 1 }}>{tab.icon}</span>
@@ -2362,19 +2575,20 @@ export default function CoupleDiary() {
       <div
         style={{
           textAlign: "center",
-          padding: "12px 12px",
+          padding: "11px 12px 13px",
           color: COLORS.muted,
           fontSize: 12,
           position: "fixed",
           bottom: 0,
           left: 0,
           right: 0,
-          background: "rgba(255,246,242,.95)",
-          backdropFilter: "blur(16px)",
-          WebkitBackdropFilter: "blur(16px)",
-          borderTop: "1px solid rgba(240,195,175,.4)",
+          background: "rgba(255,246,242,.97)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          borderTop: "1px solid rgba(240,195,175,.38)",
           zIndex: 101,
-          letterSpacing: 0.6,
+          letterSpacing: 0.7,
+          fontWeight: 500,
         }}
       >
         💕 只属于我们两个人的小天地
