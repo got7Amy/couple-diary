@@ -2212,7 +2212,7 @@ function FiveYearDiaryTab({
       <Input
         value={value.content}
         onChange={(v) => setValue((p) => ({ ...p, content: v }))}
-        placeholder="今天一句话也可以：发生了什么、心情怎样、想记住什么…"
+        placeholder="发生了什么、心情怎样、想记住什么…"
         multiline
         rows={5}
         style={{ marginBottom: 12 }}
@@ -2313,7 +2313,7 @@ function FiveYearDiaryTab({
             五年日记 📚
           </h2>
           <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6, paddingLeft: 12 }}>
-            同一天，看看今年和过去五年的自己。
+            同一天，看见今年和过去 5 年的自己
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -2391,7 +2391,7 @@ function FiveYearDiaryTab({
 
             {!hasAnything && (
               <div style={{ color: COLORS.muted, fontSize: 15, lineHeight: 1.7, padding: "4px 0" }}>
-                这一天还没有记录。以后再回头看，会很有意思。
+                这一天还没有记录
               </div>
             )}
           </Card>
@@ -2482,7 +2482,7 @@ export default function CoupleDiary() {
           textShadow: "0 2px 14px rgba(0,0,0,.2)",
           lineHeight: 1.3,
         }}>
-          💑 我们的日记本
+          ❤️ 我的日记本
         </h1>
         <div style={{
           marginTop: 4,
@@ -2570,29 +2570,6 @@ export default function CoupleDiary() {
       >
         {renderTab()}
       </main>
-
-      {/* ── Footer ── */}
-      <div
-        style={{
-          textAlign: "center",
-          padding: "11px 12px 13px",
-          color: COLORS.muted,
-          fontSize: 12,
-          position: "fixed",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          background: "rgba(255,246,242,.97)",
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
-          borderTop: "1px solid rgba(240,195,175,.38)",
-          zIndex: 101,
-          letterSpacing: 0.7,
-          fontWeight: 500,
-        }}
-      >
-        💕 只属于我们两个人的小天地
-      </div>
     </div>
   );
 }
