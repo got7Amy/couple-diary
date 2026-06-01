@@ -731,9 +731,31 @@ function DiaryTab({ data, setData }: { data: DiaryEntry[]; setData: Setter<Diary
 
       {sorted.length === 0 && !adding && <EmptyState emoji="📖" text="还没有日记，快记录第一篇吧～" />}
 
-      {sorted.map((entry) => (
-        <Card key={entry.id}>
-          {editId === entry.id ? (
+      {sorted.map((entry, index) => {
+        const entryYear = toLocalDate(entry.date).getFullYear();
+        const prevYear = index > 0 ? toLocalDate(sorted[index - 1].date).getFullYear() : null;
+
+        return (
+          <div key={entry.id}>
+            {entryYear !== prevYear && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  margin: index === 0 ? "2px 0 12px" : "22px 0 12px",
+                  color: COLORS.accent,
+                  fontSize: 18,
+                  fontWeight: 900,
+                }}
+              >
+                <span style={{ height: 1, flex: 1, background: "rgba(232,115,90,.22)" }} />
+                <span>{entryYear}</span>
+                <span style={{ height: 1, flex: 1, background: "rgba(232,115,90,.22)" }} />
+              </div>
+            )}
+            <Card>
+              {editId === entry.id ? (
             <>
               <DiaryFields form={editForm} setForm={setEditForm} />
               <FormActions onSave={saveEdit} onCancel={() => setEditId(null)} saveText="保存修改" />
@@ -745,7 +767,7 @@ function DiaryTab({ data, setData }: { data: DiaryEntry[]; setData: Setter<Diary
                   <span style={{ fontSize: 30, marginRight: 8 }}>{entry.mood}</span>
                   <strong style={{ color: COLORS.text, fontSize: 18, wordBreak: "break-word" }}>{entry.title}</strong>
                 </div>
-                <Tag>{fmtDateWithYear(entry.date)}</Tag>
+                <Tag>{fmtDate(entry.date)}</Tag>
               </div>
               {entry.content && (
                 <p style={{ margin: "12px 0", color: COLORS.muted, fontSize: 16, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>
@@ -763,8 +785,10 @@ function DiaryTab({ data, setData }: { data: DiaryEntry[]; setData: Setter<Diary
               />
             </>
           )}
-        </Card>
-      ))}
+            </Card>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -2212,7 +2236,7 @@ function FiveYearDiaryTab({
       <Input
         value={value.content}
         onChange={(v) => setValue((p) => ({ ...p, content: v }))}
-        placeholder="发生了什么、心情怎样、想记住什么…"
+        placeholder="今天一句话也可以：发生了什么、心情怎样、想记住什么…"
         multiline
         rows={5}
         style={{ marginBottom: 12 }}
@@ -2232,7 +2256,7 @@ function FiveYearDiaryTab({
                 <img
                   src={photo.src}
                   alt="五年日记照片"
-                  style={{ width: "100%", height: 170, objectFit: "cover" }}
+                  style={{ width: "100%", height: "auto", objectFit: "contain" }}
                 />
                 <div style={{ padding: "8px 10px", display: "flex", justifyContent: "flex-end" }}>
                   <Btn small outline color={COLORS.danger} onClick={() => deletePhoto(date, photo.id)}>删除照片</Btn>
@@ -2286,7 +2310,7 @@ function FiveYearDiaryTab({
       <div style={{ background: COLORS.light, borderRadius: 16, padding: "12px 14px", marginBottom: 10 }}>
         {editing ? (
           <>
-            <FiveYearFields value={editForm} setValue={setEditForm} />
+            {FiveYearFields({ value: editForm, setValue: setEditForm })}
             <FormActions onSave={saveEdit} onCancel={() => setEditTarget(null)} saveText="保存修改" color={COLORS.purple} />
           </>
         ) : (
@@ -2313,7 +2337,7 @@ function FiveYearDiaryTab({
             五年日记 📚
           </h2>
           <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6, paddingLeft: 12 }}>
-            同一天，看见今年和过去 5 年的自己
+            同一天，看看今年和过去五年的自己。
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -2341,7 +2365,7 @@ function FiveYearDiaryTab({
             <Tag color="#F3EEFF">五年日记</Tag>
             <span style={{ color: COLORS.muted, fontSize: 13 }}>只保存在五年日记，不会出现在心情日记列表里。</span>
           </div>
-          <FiveYearFields value={form} setValue={setForm} />
+          {FiveYearFields({ value: form, setValue: setForm })}
           <FormActions onSave={saveNewEntry} onCancel={() => { setAdding(false); setForm(blankFiveYearForm(currentDate)); }} saveText="保存这篇日记 📚" color={COLORS.purple} />
         </Card>
       )}
@@ -2355,24 +2379,18 @@ function FiveYearDiaryTab({
 
         return (
           <Card key={date} style={{ borderLeft: `4px solid ${date === currentDate ? COLORS.purple : COLORS.secondary}` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-              <div>
-                <div style={{ color: COLORS.text, fontWeight: 900, fontSize: 18 }}>
-                  {toLocalDate(date).getFullYear()}年
-                </div>
-                <div style={{ color: COLORS.muted, fontSize: 13, marginTop: 3 }}>{getEntryYearLabel(date, baseYear)}</div>
-              </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
               <Tag color={date === currentDate ? "#F3EEFF" : COLORS.soft}>{date}</Tag>
             </div>
 
             <PhotoBlock date={date} />
 
             {ownEntries.map((entry) => (
-              <FiveYearEntryBlock key={entry.id} entry={entry} source="own" />
+              <div key={entry.id}>{FiveYearEntryBlock({ entry, source: "own" })}</div>
             ))}
 
             {legacyEntries.map((entry) => (
-              <FiveYearEntryBlock key={entry.id} entry={entry} source="legacy" />
+              <div key={entry.id}>{FiveYearEntryBlock({ entry, source: "legacy" })}</div>
             ))}
 
             {moodEntries.map((entry) => (
@@ -2391,7 +2409,7 @@ function FiveYearDiaryTab({
 
             {!hasAnything && (
               <div style={{ color: COLORS.muted, fontSize: 15, lineHeight: 1.7, padding: "4px 0" }}>
-                这一天还没有记录
+                这一天还没有记录。以后再回头看，会很有意思。
               </div>
             )}
           </Card>
