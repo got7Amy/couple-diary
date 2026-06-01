@@ -172,7 +172,7 @@ function useLocalStorage<T>(key: string, initialValue: T) {
     try {
       localStorage.setItem(key, JSON.stringify(value));
     } catch {
-      alert("本地存储空间可能满了。照片太多时，建议删除一些旧照片。");
+      alert("本地存储空间可能满了。建议删除一些不再需要的旧记录。");
     }
   }, [key, value]);
 
