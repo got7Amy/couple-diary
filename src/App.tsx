@@ -96,7 +96,15 @@ type DiaryEntry = BaseItem & {
   mood: string;
   title: string;
   content: string;
+  source?: "diary" | "fiveYear";
 };
+
+type FiveYearDiaryEntry = BaseItem & {
+  date: string;
+  content: string;
+};
+
+type FiveYearDiaryData = Record<string, FiveYearDiaryEntry>;
 
 type JokeEntry = BaseItem & {
   date: string;
@@ -519,9 +527,12 @@ const FormActions = ({
 );
 
 // ─── Mood Diary ───────────────────────────────────────────────────────────────
-const MOODS = ["😊", "😍", "😢", "😤", "😌", "🥳", "😴", "😰"];
+const MOODS = ["😊", "😍", "🥰", "😂", "😢", "😤", "😌", "🥳", "😴", "😰", "🤯", "😭", "😎", "🤒"];
 
 type DiaryForm = Omit<DiaryEntry, keyof BaseItem>;
+
+const isFiveYearDiaryEntry = (entry: DiaryEntry) =>
+  entry.source === "fiveYear" || entry.title === "五年日记";
 
 function DiaryFields({
   form,
@@ -539,7 +550,20 @@ function DiaryFields({
           onChange={(v) => setForm((p) => ({ ...p, date: v }))}
           style={{ width: 170 }}
         />
-        <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
+        <div
+          className="hide-scrollbar"
+          style={{
+            display: "flex",
+            gap: 7,
+            alignItems: "center",
+            flexWrap: "nowrap",
+            overflowX: "auto",
+            maxWidth: "100%",
+            minWidth: 0,
+            flex: "1 1 0",
+            padding: "2px 2px 6px",
+          }}
+        >
           {MOODS.map((m) => (
             <span
               key={m}
@@ -583,22 +607,45 @@ function DiaryTab({ data, setData }: { data: DiaryEntry[]; setData: Setter<Diary
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<DiaryForm>(blank);
 
-  const sorted = [...data].sort(
-    (a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt
-  );
+  const sorted = [...data]
+    .filter((entry) => !isFiveYearDiaryEntry(entry))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
 
   const save = () => {
-    if (!form.title.trim()) return;
-    setData((prev) => [{ id: uid(), createdAt: now(), ...form }, ...prev]);
+    const cleanedTitle = form.title.trim();
+    const cleanedContent = form.content.trim();
+    if (!cleanedTitle && !cleanedContent) return;
+    setData((prev) => [
+      {
+        id: uid(),
+        createdAt: now(),
+        ...form,
+        title: cleanedTitle || "心情日记",
+        content: cleanedContent,
+        source: "diary",
+      },
+      ...prev,
+    ]);
     setForm(blank);
     setAdding(false);
   };
 
   const saveEdit = () => {
-    if (!editForm.title.trim() || !editId) return;
+    const cleanedTitle = editForm.title.trim();
+    const cleanedContent = editForm.content.trim();
+    if ((!cleanedTitle && !cleanedContent) || !editId) return;
     setData((prev) =>
       prev.map((entry) =>
-        entry.id === editId ? { ...entry, ...editForm, updatedAt: now() } : entry
+        entry.id === editId
+          ? {
+              ...entry,
+              ...editForm,
+              title: cleanedTitle || "心情日记",
+              content: cleanedContent,
+              source: entry.source || "diary",
+              updatedAt: now(),
+            }
+          : entry
       )
     );
     setEditId(null);
@@ -1809,21 +1856,21 @@ function ShoppingTab({ data, setData }: { data: ShoppingEntry[]; setData: Setter
 
 
 // ─── Five-year Diary ─────────────────────────────────────────────────────────
+const dateKey = (year: number, month: number, day: number) =>
+  `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+
 const addDays = (dateStr: string, amount: number) => {
   const d = toLocalDate(dateStr);
   d.setDate(d.getDate() + amount);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  return dateKey(d.getFullYear(), d.getMonth() + 1, d.getDate());
 };
 
-const daysInMonth = (year: number, monthIndex: number) =>
-  new Date(year, monthIndex + 1, 0).getDate();
-
-const sameMonthDayInYear = (year: number, monthIndex: number, day: number) => {
-  const safeDay = Math.min(day, daysInMonth(year, monthIndex));
-  return `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
+const sameMonthDayInYear = (baseDate: string, year: number) => {
+  const base = toLocalDate(baseDate);
+  const month = base.getMonth();
+  const day = base.getDate();
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  return dateKey(year, month + 1, Math.min(day, lastDay));
 };
 
 const fmtFullDate = (dateStr: string) =>
@@ -1833,6 +1880,12 @@ const fmtFullDate = (dateStr: string) =>
     day: "numeric",
     weekday: "short",
   });
+
+const getEntryYearLabel = (date: string, baseYear: number) => {
+  const year = toLocalDate(date).getFullYear();
+  if (year === baseYear) return "今年";
+  return `${baseYear - year}年前`;
+};
 
 const readFileAsDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -1863,57 +1916,70 @@ const shrinkPhoto = (dataUrl: string, maxWidth = 900, quality = 0.72) =>
   });
 
 function FiveYearDiaryTab({
+  data,
+  setData,
   diary,
-  setDiary,
   photos,
   setPhotos,
 }: {
+  data: FiveYearDiaryData;
+  setData: Setter<FiveYearDiaryData>;
   diary: DiaryEntry[];
-  setDiary: Setter<DiaryEntry[]>;
   photos: FiveYearPhotosData;
   setPhotos: Setter<FiveYearPhotosData>;
 }) {
   const [selectedDate, setSelectedDate] = useState(today());
-  const [mood, setMood] = useState("😊");
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
+  const baseYear = new Date().getFullYear();
+  const currentDate = sameMonthDayInYear(selectedDate, baseYear);
+  const [draft, setDraft] = useState(data[currentDate]?.content || "");
   const [photoPick, setPhotoPick] = useState<Record<string, number>>({});
 
-  const base = toLocalDate(selectedDate);
-  const baseYear = base.getFullYear();
-  const monthIndex = base.getMonth();
-  const day = base.getDate();
-  const yearRows = Array.from({ length: 6 }, (_, index) => {
-    const year = baseYear - index;
-    const date = sameMonthDayInYear(year, monthIndex, day);
-    return { year, date, index };
-  });
-  const writingDate = yearRows[0].date;
+  useEffect(() => {
+    setDraft(data[currentDate]?.content || "");
+  }, [currentDate, data]);
 
-  const saveTodayEntry = () => {
-    const cleanedContent = content.trim();
-    const cleanedTitle = title.trim();
-    if (!cleanedTitle && !cleanedContent) return;
-    setDiary((prev) => [
-      {
-        id: uid(),
-        createdAt: now(),
-        date: writingDate,
-        mood,
-        title: cleanedTitle || "五年日记",
-        content: cleanedContent,
-      },
+  const displayDates = Array.from({ length: 6 }, (_, index) =>
+    sameMonthDayInYear(currentDate, baseYear - index)
+  );
+
+  const moodEntriesByDate = diary.reduce<Record<string, DiaryEntry[]>>((acc, entry) => {
+    if (!entry.date || isFiveYearDiaryEntry(entry)) return acc;
+    acc[entry.date] = acc[entry.date] || [];
+    acc[entry.date].push(entry);
+    return acc;
+  }, {});
+
+  const legacyFiveYearEntriesByDate = diary.reduce<Record<string, DiaryEntry[]>>((acc, entry) => {
+    if (!entry.date || !isFiveYearDiaryEntry(entry)) return acc;
+    acc[entry.date] = acc[entry.date] || [];
+    acc[entry.date].push(entry);
+    return acc;
+  }, {});
+
+  const saveCurrentEntry = () => {
+    const content = draft.trim();
+    if (!content) return;
+    setData((prev) => ({
       ...prev,
-    ]);
-    setTitle("");
-    setContent("");
-    setMood("😊");
+      [currentDate]: prev[currentDate]
+        ? { ...prev[currentDate], content, updatedAt: now() }
+        : { id: uid(), createdAt: now(), date: currentDate, content },
+    }));
   };
 
-  const entriesByDate = (date: string) =>
-    diary
-      .filter((entry) => entry.date === date)
-      .sort((a, b) => b.createdAt - a.createdAt);
+  const clearCurrentEntry = () => {
+    if (!data[currentDate]) {
+      setDraft("");
+      return;
+    }
+    if (!confirmDelete()) return;
+    setData((prev) => {
+      const next = { ...prev };
+      delete next[currentDate];
+      return next;
+    });
+    setDraft("");
+  };
 
   const chooseRandomPhoto = (date: string) => {
     const list = photos[date] || [];
@@ -1938,11 +2004,12 @@ function FiveYearDiaryTab({
           } as FiveYearPhoto;
         })
       );
+      const firstNewPhotoIndex = photos[date]?.length || 0;
       setPhotos((prev) => ({
         ...prev,
         [date]: [...(prev[date] || []), ...newPhotos],
       }));
-      setPhotoPick((prev) => ({ ...prev, [date]: Math.floor(Math.random() * newPhotos.length) }));
+      setPhotoPick((prev) => ({ ...prev, [date]: firstNewPhotoIndex }));
     } catch {
       alert("照片导入失败。可以少选几张，或者换一张体积小一点的照片试试。");
     }
@@ -1950,154 +2017,183 @@ function FiveYearDiaryTab({
 
   const deletePhoto = (date: string, id: string) => {
     if (!confirmDelete()) return;
-    setPhotos((prev) => ({
-      ...prev,
-      [date]: (prev[date] || []).filter((p) => p.id !== id),
-    }));
+    setPhotos((prev) => {
+      const nextList = (prev[date] || []).filter((p) => p.id !== id);
+      const next = { ...prev };
+      if (nextList.length > 0) next[date] = nextList;
+      else delete next[date];
+      return next;
+    });
+    setPhotoPick((prev) => ({ ...prev, [date]: 0 }));
+  };
+
+  const PhotoBlock = ({ date }: { date: string }) => {
+    const photoList = photos[date] || [];
+    const selectedPhoto = photoList.length > 0 ? photoList[(photoPick[date] ?? 0) % photoList.length] : null;
+
+    return (
+      <div style={{ marginBottom: 12 }}>
+        {selectedPhoto ? (
+          <div style={{ borderRadius: 18, overflow: "hidden", background: COLORS.light, boxShadow: "0 2px 10px rgba(61,34,24,.08)" }}>
+            <img
+              src={selectedPhoto.src}
+              alt={`${date} 的照片`}
+              style={{ width: "100%", maxHeight: 320, objectFit: "cover" }}
+            />
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", padding: "10px 12px" }}>
+              <span style={{ color: COLORS.muted, fontSize: 13 }}>📸 已定位到 {date} · 共 {photoList.length} 张</span>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {photoList.length > 1 && (
+                  <Btn small outline color={COLORS.purple} onClick={() => chooseRandomPhoto(date)}>随机换一张</Btn>
+                )}
+                <Btn small outline color={COLORS.danger} onClick={() => deletePhoto(date, selectedPhoto.id)}>删除照片</Btn>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ border: `1.5px dashed rgba(155,123,114,.35)`, borderRadius: 18, padding: "16px 14px", background: "rgba(255,240,234,.45)", color: COLORS.muted, fontSize: 14, lineHeight: 1.8 }}>
+            还没有这一天的照片。点下面按钮导入后，会自动归到这一张日期卡片里。
+          </div>
+        )}
+
+        <label
+          className="diary-btn"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            marginTop: 10,
+            borderRadius: 999,
+            padding: "7px 16px",
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: "pointer",
+            color: COLORS.blue,
+            border: `1.5px solid ${COLORS.blue}`,
+            background: "transparent",
+          }}
+        >
+          选择/导入这一天照片
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            style={{ display: "none" }}
+            onChange={(e) => {
+              handlePhotoUpload(date, e.currentTarget.files);
+              e.currentTarget.value = "";
+            }}
+          />
+        </label>
+      </div>
+    );
   };
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
         <div>
           <h2 style={{ margin: 0, color: COLORS.text, fontSize: 23, fontWeight: 900 }}>五年日记 📚</h2>
-          <div style={{ color: COLORS.muted, fontSize: 13, marginTop: 5 }}>
-            同一天，看见今年和过去 5 年的自己
+          <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6 }}>
+            同一天，看看今年和过去五年的自己。
           </div>
         </div>
+        <Btn onClick={() => setSelectedDate(today())} small outline color={COLORS.primary}>回到今天</Btn>
       </div>
 
       <Card style={{ border: `2px solid ${COLORS.secondary}` }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", marginBottom: 12 }}>
-          <Btn small outline color={COLORS.muted} onClick={() => setSelectedDate(addDays(selectedDate, -1))}>← 前一天</Btn>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <MiniIconButton label="前一天" color={COLORS.primary} onClick={() => setSelectedDate(addDays(currentDate, -1))}>‹</MiniIconButton>
           <Input
             type="date"
-            value={selectedDate}
-            onChange={setSelectedDate}
-            style={{ width: 170, flex: "0 0 auto" }}
+            value={currentDate}
+            onChange={(v) => setSelectedDate(v || today())}
+            style={{ width: 180, flex: "1 1 180px" }}
           />
-          <Btn small outline color={COLORS.muted} onClick={() => setSelectedDate(addDays(selectedDate, 1))}>后一天 →</Btn>
-          <Btn small color={COLORS.secondary} onClick={() => setSelectedDate(today())}>回到今天</Btn>
-        </div>
-        <div style={{ color: COLORS.muted, fontSize: 13, lineHeight: 1.8 }}>
-          说明：iOS 网页不能无提示直接扫描系统相册；这里用“选择照片”让你授权导入当天照片，导入后会压缩成缩略图存在本地。
+          <MiniIconButton label="后一天" color={COLORS.primary} onClick={() => setSelectedDate(addDays(currentDate, 1))}>›</MiniIconButton>
         </div>
       </Card>
 
-      <Card style={{ borderLeft: `4px solid ${COLORS.primary}` }}>
-        <div style={{ fontWeight: 900, color: COLORS.text, marginBottom: 12 }}>
-          给 {fmtFullDate(writingDate)} 写一篇
-        </div>
-        <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-          {MOODS.map((m) => (
-            <span
-              key={m}
-              onClick={() => setMood(m)}
-              style={{
-                fontSize: 25,
-                cursor: "pointer",
-                opacity: mood === m ? 1 : 0.35,
-                transform: mood === m ? "scale(1.18)" : "scale(1)",
-                transition: "opacity .15s, transform .15s",
-                display: "inline-block",
-              }}
-            >
-              {m}
-            </span>
-          ))}
-        </div>
-        <Input value={title} onChange={setTitle} placeholder="标题（可选）" style={{ marginBottom: 10 }} />
-        <Input value={content} onChange={setContent} placeholder="今天这一天，想留下什么？" multiline rows={4} style={{ marginBottom: 12 }} />
-        <Btn onClick={saveTodayEntry}>保存到心情日记 💕</Btn>
-      </Card>
-
-      {yearRows.map(({ year, date, index }) => {
-        const entries = entriesByDate(date);
+      {displayDates.map((date) => {
+        const ownEntry = data[date];
+        const legacyEntries = (legacyFiveYearEntriesByDate[date] || []).sort((a, b) => b.createdAt - a.createdAt);
+        const moodEntries = (moodEntriesByDate[date] || []).sort((a, b) => b.createdAt - a.createdAt);
         const photoList = photos[date] || [];
-        const selectedPhoto = photoList.length > 0 ? photoList[(photoPick[date] ?? 0) % photoList.length] : null;
-        const label = index === 0 ? "这一年" : `${index}年前`;
+        const hasAnything = Boolean(ownEntry?.content) || legacyEntries.length > 0 || moodEntries.length > 0 || photoList.length > 0;
 
         return (
-          <Card key={date} style={{ borderLeft: `4px solid ${index === 0 ? COLORS.primary : COLORS.purple}` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 12 }}>
+          <Card key={date} style={{ borderLeft: `4px solid ${date === currentDate ? COLORS.purple : COLORS.secondary}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
               <div>
-                <div style={{ color: COLORS.text, fontWeight: 900, fontSize: 19 }}>{year} 年</div>
-                <div style={{ color: COLORS.muted, fontSize: 13, marginTop: 3 }}>{fmtFullDate(date)}</div>
+                <div style={{ color: COLORS.text, fontWeight: 900, fontSize: 18 }}>
+                  {toLocalDate(date).getFullYear()} · {fmtDate(date)}
+                </div>
+                <div style={{ color: COLORS.muted, fontSize: 13, marginTop: 3 }}>{getEntryYearLabel(date, baseYear)}</div>
               </div>
-              <Tag color={index === 0 ? COLORS.soft : "#F3EEFF"}>{label}</Tag>
+              <Tag color={date === currentDate ? "#F3EEFF" : COLORS.soft}>{date}</Tag>
             </div>
 
-            <div style={{ marginBottom: 14 }}>
-              {selectedPhoto ? (
-                <div style={{ borderRadius: 18, overflow: "hidden", background: COLORS.light, boxShadow: "0 2px 10px rgba(61,34,24,.08)" }}>
-                  <img src={selectedPhoto.src} alt={`${date} 的照片`} style={{ width: "100%", maxHeight: 260, objectFit: "cover" }} />
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", padding: "10px 12px" }}>
-                    <span style={{ color: COLORS.muted, fontSize: 13 }}>已导入 {photoList.length} 张当天照片</span>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {photoList.length > 1 && <Btn small outline color={COLORS.purple} onClick={() => chooseRandomPhoto(date)}>随机换一张</Btn>}
-                      <Btn small outline color={COLORS.danger} onClick={() => deletePhoto(date, selectedPhoto.id)}>删除照片</Btn>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ border: `1.5px dashed rgba(155,123,114,.35)`, borderRadius: 18, padding: "18px 14px", background: "rgba(255,240,234,.45)", color: COLORS.muted, fontSize: 14, lineHeight: 1.8 }}>
-                  还没有导入 {year} 年这一天的照片。
-                </div>
-              )}
-              <label
-                className="diary-btn"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  marginTop: 10,
-                  borderRadius: 999,
-                  padding: "7px 16px",
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  color: COLORS.blue,
-                  border: `1.5px solid ${COLORS.blue}`,
-                  background: "transparent",
-                }}
-              >
-                选择/导入当天照片
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  style={{ display: "none" }}
-                  onChange={(e) => {
-                    handlePhotoUpload(date, e.currentTarget.files);
-                    e.currentTarget.value = "";
-                  }}
-                />
-              </label>
-            </div>
+            <PhotoBlock date={date} />
 
-            {entries.length === 0 ? (
-              <div style={{ color: COLORS.muted, fontSize: 14, background: COLORS.light, borderRadius: 14, padding: "12px 14px" }}>
-                这一天还没有日记。
+            {ownEntry?.content && (
+              <div style={{ background: COLORS.light, borderRadius: 16, padding: "12px 14px", marginBottom: 10 }}>
+                <div style={{ color: COLORS.purple, fontWeight: 900, fontSize: 13, marginBottom: 6 }}>五年日记</div>
+                <div style={{ color: COLORS.text, fontSize: 16, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                  {ownEntry.content}
+                </div>
               </div>
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {entries.map((entry) => (
-                  <div key={entry.id} style={{ background: COLORS.light, borderRadius: 14, padding: "12px 14px" }}>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: entry.content ? 7 : 0 }}>
-                      <span style={{ fontSize: 22 }}>{entry.mood}</span>
-                      <strong style={{ color: COLORS.text, wordBreak: "break-word" }}>{entry.title}</strong>
-                    </div>
-                    {entry.content && (
-                      <div style={{ color: COLORS.muted, fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                        {entry.content}
-                      </div>
-                    )}
+            )}
+
+            {legacyEntries.map((entry) => (
+              <div key={entry.id} style={{ background: COLORS.light, borderRadius: 16, padding: "12px 14px", marginBottom: 10 }}>
+                <div style={{ color: COLORS.purple, fontWeight: 900, fontSize: 13, marginBottom: 6 }}>五年日记</div>
+                <div style={{ color: COLORS.text, fontSize: 16, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                  {entry.content || entry.title}
+                </div>
+              </div>
+            ))}
+
+            {moodEntries.map((entry) => (
+              <div key={entry.id} style={{ background: "rgba(253,232,224,.55)", borderRadius: 16, padding: "12px 14px", marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 22 }}>{entry.mood}</span>
+                  <strong style={{ color: COLORS.text, fontSize: 16, wordBreak: "break-word" }}>{entry.title || "心情日记"}</strong>
+                  <Tag>心情日记</Tag>
+                </div>
+                {entry.content && (
+                  <div style={{ color: COLORS.muted, fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                    {entry.content}
                   </div>
-                ))}
+                )}
+              </div>
+            ))}
+
+            {!hasAnything && (
+              <div style={{ color: COLORS.muted, fontSize: 15, lineHeight: 1.7, padding: "4px 0" }}>
+                这一天还没有记录。以后再回头看，会很有意思。
               </div>
             )}
           </Card>
         );
       })}
+
+      <Card style={{ border: `2px solid ${COLORS.secondary}`, marginTop: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+          <Tag color="#F3EEFF">{fmtFullDate(currentDate)}</Tag>
+          <span style={{ color: COLORS.muted, fontSize: 13 }}>输入内容只保存在五年日记，不会出现在心情日记列表里。</span>
+        </div>
+        <Input
+          value={draft}
+          onChange={setDraft}
+          placeholder="今天一句话也可以：发生了什么、心情怎样、想记住什么…"
+          multiline
+          rows={5}
+          style={{ marginBottom: 12 }}
+        />
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Btn onClick={saveCurrentEntry} color={COLORS.purple} small>保存五年日记</Btn>
+          <Btn onClick={clearCurrentEntry} outline color={COLORS.danger} small>清空这天</Btn>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -2116,12 +2212,13 @@ export default function CoupleDiary() {
   const [schedule,  setSchedule]  = useLocalStorage<ScheduleEntry[]>("couple-diary-schedule-v2",  []);
   const [shopping,  setShopping]  = useLocalStorage<ShoppingEntry[]>("couple-diary-shopping-v1",  []);
   const [reminders, setReminders] = useLocalStorage<ReminderEntry[]>("couple-diary-reminders-v2", []);
+  const [fiveYearDiary, setFiveYearDiary] = useLocalStorage<FiveYearDiaryData>("couple-diary-five-year-v1", {});
   const [fiveYearPhotos, setFiveYearPhotos] = useLocalStorage<FiveYearPhotosData>("couple-diary-fiveyear-photos-v1", {});
 
   const renderTab = () => {
     switch (activeTab) {
       case "diary":    return <DiaryTab    data={diary}        setData={setDiary} />;
-      case "fiveYear": return <FiveYearDiaryTab diary={diary} setDiary={setDiary} photos={fiveYearPhotos} setPhotos={setFiveYearPhotos} />;
+      case "fiveYear": return <FiveYearDiaryTab data={fiveYearDiary} setData={setFiveYearDiary} diary={diary} photos={fiveYearPhotos} setPhotos={setFiveYearPhotos} />;
       case "checkin":  return <CheckinTab  data={checkins}     setData={setCheckins} />;
       case "schedule": return <ScheduleTab data={schedule}     setData={setSchedule} />;
       case "shopping": return <ShoppingTab data={shopping}     setData={setShopping} />;
