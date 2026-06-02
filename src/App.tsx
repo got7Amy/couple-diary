@@ -710,6 +710,28 @@ function DiaryTab({ data, setData }: { data: DiaryEntry[]; setData: Setter<Diary
     setEditId(null);
   };
 
+  const currentYear = new Date().getFullYear();
+  const firstEntryYear = sorted.length > 0 ? toLocalDate(sorted[0].date).getFullYear() : null;
+  const showCurrentYearDivider = sorted.length > 0 && firstEntryYear !== currentYear;
+
+  const YearDivider = ({ year, first = false }: { year: number; first?: boolean }) => (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        margin: first ? "2px 0 12px" : "22px 0 12px",
+        color: COLORS.accent,
+        fontSize: 18,
+        fontWeight: 900,
+      }}
+    >
+      <span style={{ height: 1, flex: 1, background: "rgba(232,115,90,.22)" }} />
+      <span>{year}</span>
+      <span style={{ height: 1, flex: 1, background: "rgba(232,115,90,.22)" }} />
+    </div>
+  );
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
@@ -731,29 +753,15 @@ function DiaryTab({ data, setData }: { data: DiaryEntry[]; setData: Setter<Diary
 
       {sorted.length === 0 && !adding && <EmptyState emoji="📖" text="还没有日记，快记录第一篇吧～" />}
 
+      {showCurrentYearDivider && <YearDivider year={currentYear} first />}
+
       {sorted.map((entry, index) => {
         const entryYear = toLocalDate(entry.date).getFullYear();
         const prevYear = index > 0 ? toLocalDate(sorted[index - 1].date).getFullYear() : null;
 
         return (
           <div key={entry.id}>
-            {entryYear !== prevYear && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  margin: index === 0 ? "2px 0 12px" : "22px 0 12px",
-                  color: COLORS.accent,
-                  fontSize: 18,
-                  fontWeight: 900,
-                }}
-              >
-                <span style={{ height: 1, flex: 1, background: "rgba(232,115,90,.22)" }} />
-                <span>{entryYear}</span>
-                <span style={{ height: 1, flex: 1, background: "rgba(232,115,90,.22)" }} />
-              </div>
-            )}
+            {entryYear !== prevYear && <YearDivider year={entryYear} first={!showCurrentYearDivider && index === 0} />}
             <Card>
               {editId === entry.id ? (
             <>
@@ -1751,7 +1759,6 @@ function CheckinTab({ data, setData }: { data: CheckinEntry[]; setData: Setter<C
 
       {sorted.map((item) => {
         const current = displayCurrentStreak(item);
-        const lastGap = item.lastCheckinDate ? daysBetween(item.lastCheckinDate) : null;
         const checkedToday = item.lastCheckinDate === today();
 
         return (
@@ -1766,13 +1773,7 @@ function CheckinTab({ data, setData }: { data: CheckinEntry[]; setData: Setter<C
               <Tag color={checkedToday ? "#E8F5E8" : COLORS.soft}>{checkedToday ? "今日已打卡" : "今日待打卡"}</Tag>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, marginBottom: 14 }}>
-              {current === 0 && (
-                <div style={{ background: "linear-gradient(135deg, #FFF5F0 0%, #FFEDE4 100%)", borderRadius: 16, padding: "12px 12px", border: "1px solid rgba(240,190,170,.3)" }}>
-                  <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase" }}>离上次打卡</div>
-                  <div style={{ color: COLORS.text, fontSize: 24, fontWeight: 900, marginTop: 4 }}>{lastGap === null ? "—" : `${lastGap}天`}</div>
-                </div>
-              )}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginBottom: 14 }}>
               <div style={{ background: current > 0 ? "linear-gradient(135deg, #E8F8EE 0%, #D4F0DC 100%)" : "linear-gradient(135deg, #FFF5F0 0%, #FFEDE4 100%)", borderRadius: 16, padding: "12px 12px", border: `1px solid ${current > 0 ? "rgba(104,174,126,.25)" : "rgba(240,190,170,.3)"}` }}>
                 <div style={{ color: current > 0 ? COLORS.green : COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase" }}>已坚持</div>
                 <div style={{ color: current > 0 ? COLORS.green : COLORS.text, fontSize: 24, fontWeight: 900, marginTop: 4 }}>{current}天</div>
@@ -2046,6 +2047,7 @@ function FiveYearDiaryTab({
   const currentDate = sameMonthDayInYear(selectedDate, baseYear);
   const blankFiveYearForm = (date = currentDate) => ({ date, content: "" });
   const [adding, setAdding] = useState(false);
+  const [addingHostDate, setAddingHostDate] = useState<string | null>(null);
   const [form, setForm] = useState(blankFiveYearForm(currentDate));
   const [editTarget, setEditTarget] = useState<{ source: "own" | "legacy"; id: string } | null>(null);
   const [editForm, setEditForm] = useState(blankFiveYearForm(currentDate));
@@ -2076,15 +2078,19 @@ function FiveYearDiaryTab({
     return acc;
   }, {});
 
-  const openNewEntryForm = () => {
-    if (adding) {
+  const openNewEntryForm = (date = currentDate) => {
+    const targetDate = date || currentDate;
+    if (adding && addingHostDate === targetDate) {
       setAdding(false);
+      setAddingHostDate(null);
       setForm(blankFiveYearForm(currentDate));
       return;
     }
     setEditTarget(null);
-    setForm(blankFiveYearForm(currentDate));
+    setForm(blankFiveYearForm(targetDate));
+    setAddingHostDate(targetDate);
     setAdding(true);
+    setSelectedDate(sameMonthDayInYear(targetDate, baseYear));
   };
 
   const saveNewEntry = () => {
@@ -2103,6 +2109,7 @@ function FiveYearDiaryTab({
     }));
     setForm(blankFiveYearForm(currentDate));
     setAdding(false);
+    setAddingHostDate(null);
     setSelectedDate(sameMonthDayInYear(entryDate, baseYear));
   };
 
@@ -2126,12 +2133,14 @@ function FiveYearDiaryTab({
 
   const startEditOwnEntry = (entry: FiveYearDiaryEntry) => {
     setAdding(false);
+    setAddingHostDate(null);
     setEditTarget({ source: "own", id: entry.id });
     setEditForm({ date: entry.date, content: entry.content });
   };
 
   const startEditLegacyEntry = (entry: DiaryEntry) => {
     setAdding(false);
+    setAddingHostDate(null);
     setEditTarget({ source: "legacy", id: entry.id });
     setEditForm({ date: entry.date, content: entry.content || entry.title || "" });
   };
@@ -2266,34 +2275,38 @@ function FiveYearDiaryTab({
           </div>
         )}
 
-        <label
-          className="diary-btn"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            marginTop: photoList.length > 0 ? 2 : 0,
-            borderRadius: 999,
-            padding: "7px 16px",
-            fontSize: 14,
-            fontWeight: 700,
-            cursor: "pointer",
-            color: COLORS.blue,
-            border: `1.5px solid ${COLORS.blue}`,
-            background: "transparent",
-          }}
-        >
-          添加照片
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            style={{ display: "none" }}
-            onChange={(e) => {
-              handlePhotoUpload(date, e.currentTarget.files);
-              e.currentTarget.value = "";
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: photoList.length > 0 ? 2 : 0 }}>
+          <label
+            className="diary-btn"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              borderRadius: 999,
+              padding: "7px 16px",
+              fontSize: 14,
+              fontWeight: 700,
+              cursor: "pointer",
+              color: COLORS.blue,
+              border: `1.5px solid ${COLORS.blue}`,
+              background: "transparent",
             }}
-          />
-        </label>
+          >
+            添加照片
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => {
+                handlePhotoUpload(date, e.currentTarget.files);
+                e.currentTarget.value = "";
+              }}
+            />
+          </label>
+          <Btn small outline color={COLORS.purple} onClick={() => openNewEntryForm(date)}>
+            {adding && addingHostDate === date ? "取消记录" : "写记录"}
+          </Btn>
+        </div>
       </div>
     );
   };
@@ -2342,7 +2355,6 @@ function FiveYearDiaryTab({
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
           <Btn onClick={() => setSelectedDate(today())} small outline color={COLORS.primary}>回到今天</Btn>
-          <Btn onClick={openNewEntryForm} small color={COLORS.purple}>{adding ? "取消" : "+ 写日记"}</Btn>
         </div>
       </div>
 
@@ -2359,17 +2371,6 @@ function FiveYearDiaryTab({
         </div>
       </Card>
 
-      {adding && (
-        <Card style={{ border: `2px solid ${COLORS.purple}` }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-            <Tag color="#F3EEFF">五年日记</Tag>
-            <span style={{ color: COLORS.muted, fontSize: 13 }}>只保存在五年日记，不会出现在心情日记列表里。</span>
-          </div>
-          {FiveYearFields({ value: form, setValue: setForm })}
-          <FormActions onSave={saveNewEntry} onCancel={() => { setAdding(false); setForm(blankFiveYearForm(currentDate)); }} saveText="保存这篇日记 📚" color={COLORS.purple} />
-        </Card>
-      )}
-
       {displayDates.map((date) => {
         const ownEntries = getEntriesForDate(date);
         const legacyEntries = (legacyFiveYearEntriesByDate[date] || []).sort((a, b) => b.createdAt - a.createdAt);
@@ -2384,6 +2385,26 @@ function FiveYearDiaryTab({
             </div>
 
             <PhotoBlock date={date} />
+
+            {adding && addingHostDate === date && (
+              <div style={{ background: "rgba(243,238,255,.65)", borderRadius: 18, padding: "14px", marginBottom: 12, border: `1.5px solid rgba(164,143,192,.25)` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+                  <Tag color="#F3EEFF">新增记录</Tag>
+                  <span style={{ color: COLORS.muted, fontSize: 13 }}>只保存在五年日记，不会出现在心情日记列表里。</span>
+                </div>
+                {FiveYearFields({ value: form, setValue: setForm })}
+                <FormActions
+                  onSave={saveNewEntry}
+                  onCancel={() => {
+                    setAdding(false);
+                    setAddingHostDate(null);
+                    setForm(blankFiveYearForm(currentDate));
+                  }}
+                  saveText="保存记录 📚"
+                  color={COLORS.purple}
+                />
+              </div>
+            )}
 
             {ownEntries.map((entry) => (
               <div key={entry.id}>{FiveYearEntryBlock({ entry, source: "own" })}</div>
