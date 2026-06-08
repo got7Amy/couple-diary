@@ -38,6 +38,7 @@ type TabId =
   | "success"
   | "fiveYear"
   | "reading"
+  | "games"
   | "checkin"
   | "schedule"
   | "shopping"
@@ -52,6 +53,7 @@ const TABS: { id: TabId; icon: string; label: string }[] = [
   { id: "success",  icon: "🏆", label: "成功日记" },
   { id: "fiveYear", icon: "📚", label: "五年日记" },
   { id: "reading",  icon: "📕", label: "读书" },
+  { id: "games",    icon: "🎮", label: "游戏记录" },
   { id: "checkin",  icon: "✅", label: "打卡" },
   { id: "schedule", icon: "🗓", label: "本周计划" },
   { id: "shopping", icon: "🛒", label: "购物清单" },
@@ -223,6 +225,24 @@ type ReadingBookEntry = BaseItem & {
   finishDate: string;
   progress: string;
   history?: ReadingProgressEntry[];
+};
+
+type GamePreference = "like" | "neutral" | "dislike";
+
+type GameScreenshot = BaseItem & {
+  src: string;
+  name?: string;
+};
+
+type GameEntry = BaseItem & {
+  title: string;
+  platform: string;
+  playTime: string;
+  preference: GamePreference;
+  note: string;
+  finished: boolean;
+  finishDate: string;
+  screenshots: GameScreenshot[];
 };
 
 // ─── localStorage hook (unchanged) ───────────────────────────────────────────
@@ -3649,6 +3669,567 @@ function ReadingTab({ data, setData }: { data: ReadingBookEntry[]; setData: Sett
   );
 }
 
+// ─── Game Tracker ────────────────────────────────────────────────────────────
+const GAME_PREFERENCE_META: Record<GamePreference, { label: string; emoji: string; color: string }> = {
+  like: { label: "喜欢", emoji: "💖", color: COLORS.green },
+  neutral: { label: "一般", emoji: "🤔", color: COLORS.muted },
+  dislike: { label: "不喜欢", emoji: "💔", color: COLORS.danger },
+};
+
+const GAME_SECTION_META: Record<"playing" | "finished", { title: string; emoji: string; empty: string; color: string }> = {
+  playing: {
+    title: "正在玩 / 还没玩完",
+    emoji: "🕹️",
+    empty: "还没有正在玩的游戏。把想记录的游戏放进来，截图和感受都可以慢慢补。",
+    color: COLORS.blue,
+  },
+  finished: {
+    title: "已玩完",
+    emoji: "🏁",
+    empty: "还没有玩完的游戏。以后这里就是你的通关收藏柜。",
+    color: COLORS.purple,
+  },
+};
+
+const GAME_SECTION_ORDER: ("playing" | "finished")[] = ["playing", "finished"];
+
+const normalizeGamePreference = (preference?: string): GamePreference =>
+  preference === "like" || preference === "dislike" || preference === "neutral" ? preference : "neutral";
+
+const readGameScreenshots = (files: FileList | null): Promise<GameScreenshot[]> => {
+  const imageFiles = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
+  return Promise.all(
+    imageFiles.map(
+      (file) =>
+        new Promise<GameScreenshot>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () =>
+            resolve({
+              id: uid(),
+              createdAt: now(),
+              src: String(reader.result || ""),
+              name: file.name,
+            });
+          reader.onerror = () =>
+            resolve({
+              id: uid(),
+              createdAt: now(),
+              src: "",
+              name: file.name,
+            });
+          reader.readAsDataURL(file);
+        })
+    )
+  );
+};
+
+const sortGames = (games: GameEntry[]) =>
+  [...games].sort((a, b) => {
+    if (a.finished !== b.finished) return Number(a.finished) - Number(b.finished);
+    return (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt);
+  });
+
+function GameTrackerTab({ data, setData }: { data: GameEntry[]; setData: Setter<GameEntry[]> }) {
+  type GameForm = Omit<GameEntry, keyof BaseItem>;
+
+  const blankGameForm = (): GameForm => ({
+    title: "",
+    platform: "",
+    playTime: "",
+    preference: "neutral",
+    note: "",
+    finished: false,
+    finishDate: "",
+    screenshots: [],
+  });
+
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState<GameForm>(blankGameForm());
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<GameForm>(blankGameForm());
+  const [collapsed, setCollapsed] = useState<Record<"playing" | "finished", boolean>>({
+    playing: false,
+    finished: false,
+  });
+
+  const cleanedData: GameEntry[] = data.map((game) => ({
+    ...game,
+    title: game.title || "未命名游戏",
+    platform: game.platform || "",
+    playTime: game.playTime || "",
+    preference: normalizeGamePreference(game.preference),
+    note: game.note || "",
+    finished: Boolean(game.finished),
+    finishDate: game.finishDate || "",
+    screenshots: game.screenshots || [],
+  }));
+
+  const sorted = sortGames(cleanedData);
+  const grouped = {
+    playing: sorted.filter((game) => !game.finished),
+    finished: sorted.filter((game) => game.finished),
+  };
+
+  const likedCount = cleanedData.filter((game) => normalizeGamePreference(game.preference) === "like").length;
+  const finishedCount = cleanedData.filter((game) => game.finished).length;
+  const screenshotCount = cleanedData.reduce((sum, game) => sum + (game.screenshots || []).length, 0);
+
+  const resetAddForm = () => {
+    setForm(blankGameForm());
+    setAdding(false);
+  };
+
+  const cleanForm = (value: GameForm): GameForm => {
+    const finished = Boolean(value.finished);
+    return {
+      title: value.title.trim(),
+      platform: value.platform.trim(),
+      playTime: value.playTime.trim(),
+      preference: normalizeGamePreference(value.preference),
+      note: value.note.trim(),
+      finished,
+      finishDate: finished ? value.finishDate || today() : "",
+      screenshots: (value.screenshots || []).filter((shot) => shot.src),
+    };
+  };
+
+  const save = () => {
+    const cleaned = cleanForm(form);
+    if (!cleaned.title) return;
+    setData((prev) => [{ id: uid(), createdAt: now(), ...cleaned }, ...prev]);
+    resetAddForm();
+  };
+
+  const saveEdit = () => {
+    if (!editId) return;
+    const cleaned = cleanForm(editForm);
+    if (!cleaned.title) return;
+    setData((prev) => prev.map((game) => (game.id === editId ? { ...game, ...cleaned, updatedAt: now() } : game)));
+    setEditId(null);
+  };
+
+  const deleteGame = (id: string) => {
+    if (confirmDelete()) setData((prev) => prev.filter((game) => game.id !== id));
+  };
+
+  const toggleFinished = (game: GameEntry) => {
+    setData((prev) =>
+      prev.map((item) =>
+        item.id === game.id
+          ? {
+              ...item,
+              finished: !game.finished,
+              finishDate: !game.finished ? today() : "",
+              updatedAt: now(),
+            }
+          : item
+      )
+    );
+  };
+
+  const addScreenshotsToForm = async (files: FileList | null, setValue: Setter<GameForm>) => {
+    const shots = (await readGameScreenshots(files)).filter((shot) => shot.src);
+    if (shots.length === 0) return;
+    setValue((prev) => ({ ...prev, screenshots: [...(prev.screenshots || []), ...shots] }));
+  };
+
+  const addScreenshotsToGame = async (gameId: string, files: FileList | null) => {
+    const shots = (await readGameScreenshots(files)).filter((shot) => shot.src);
+    if (shots.length === 0) return;
+    setData((prev) =>
+      prev.map((game) =>
+        game.id === gameId
+          ? { ...game, screenshots: [...(game.screenshots || []), ...shots], updatedAt: now() }
+          : game
+      )
+    );
+  };
+
+  const deleteScreenshotFromGame = (gameId: string, screenshotId: string) => {
+    if (!confirmDelete()) return;
+    setData((prev) =>
+      prev.map((game) =>
+        game.id === gameId
+          ? {
+              ...game,
+              screenshots: (game.screenshots || []).filter((shot) => shot.id !== screenshotId),
+              updatedAt: now(),
+            }
+          : game
+      )
+    );
+  };
+
+  const deleteScreenshotFromForm = (screenshotId: string, setValue: Setter<GameForm>) => {
+    setValue((prev) => ({ ...prev, screenshots: (prev.screenshots || []).filter((shot) => shot.id !== screenshotId) }));
+  };
+
+  const ScreenshotPicker = ({
+    onFiles,
+    label = "+ 添加截图",
+    color = COLORS.blue,
+  }: {
+    onFiles: (files: FileList | null) => void;
+    label?: string;
+    color?: string;
+  }) => (
+    <label
+      className="diary-btn"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: BTN_GRADIENTS[color] ?? color,
+        color: "#fff",
+        borderRadius: 999,
+        padding: "8px 18px",
+        fontSize: 14,
+        fontWeight: 700,
+        cursor: "pointer",
+        boxShadow: "0 2px 12px rgba(0,0,0,.13), 0 1px 3px rgba(0,0,0,.08)",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+      <input
+        type="file"
+        accept="image/*"
+        multiple
+        style={{ display: "none" }}
+        onChange={(e) => {
+          onFiles(e.currentTarget.files);
+          e.currentTarget.value = "";
+        }}
+      />
+    </label>
+  );
+
+  const ScreenshotGrid = ({
+    screenshots,
+    onDelete,
+  }: {
+    screenshots: GameScreenshot[];
+    onDelete?: (id: string) => void;
+  }) => {
+    if (!screenshots || screenshots.length === 0) return null;
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10, marginTop: 12 }}>
+        {screenshots.map((shot) => (
+          <div key={shot.id} style={{ position: "relative", borderRadius: 16, overflow: "hidden", background: COLORS.light, minHeight: 90 }}>
+            <img
+              src={shot.src}
+              alt={shot.name || "游戏截图"}
+              style={{ width: "100%", height: 130, objectFit: "cover", borderRadius: 16 }}
+            />
+            {onDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete(shot.id)}
+                aria-label="删除截图"
+                title="删除截图"
+                className="diary-btn"
+                style={{
+                  position: "absolute",
+                  top: 6,
+                  right: 6,
+                  width: 28,
+                  height: 28,
+                  borderRadius: 999,
+                  border: "none",
+                  background: "rgba(61,34,24,.72)",
+                  color: "#fff",
+                  fontWeight: 900,
+                  cursor: "pointer",
+                  padding: 0,
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const Fields = ({ value, setValue }: { value: GameForm; setValue: Setter<GameForm> }) => {
+    const preference = normalizeGamePreference(value.preference);
+    return (
+      <>
+        <Input
+          value={value.title}
+          onChange={(v) => setValue((p) => ({ ...p, title: v }))}
+          placeholder="游戏名"
+          style={{ marginBottom: 10 }}
+        />
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          <Input
+            value={value.platform}
+            onChange={(v) => setValue((p) => ({ ...p, platform: v }))}
+            placeholder="平台/设备，如 Switch / Steam / 手机（可选）"
+            style={{ flex: "1 1 230px" }}
+          />
+          <Input
+            value={value.playTime}
+            onChange={(v) => setValue((p) => ({ ...p, playTime: v }))}
+            placeholder="游玩时长，如 12h / 3晚"
+            style={{ flex: "1 1 160px" }}
+          />
+        </div>
+
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 10 }}>
+          {(Object.keys(GAME_PREFERENCE_META) as GamePreference[]).map((key) => {
+            const meta = GAME_PREFERENCE_META[key];
+            return (
+              <span
+                key={key}
+                onClick={() => setValue((p) => ({ ...p, preference: key }))}
+                style={{
+                  padding: "7px 12px",
+                  borderRadius: 999,
+                  background: preference === key ? meta.color : COLORS.light,
+                  color: preference === key ? "#fff" : COLORS.muted,
+                  cursor: "pointer",
+                  fontSize: 14,
+                  fontWeight: 900,
+                  boxShadow: preference === key ? "0 2px 10px rgba(61,34,24,.12)" : "none",
+                  transition: "background .15s, transform .15s",
+                }}
+              >
+                {meta.emoji} {meta.label}
+              </span>
+            );
+          })}
+        </div>
+
+        <label style={{ display: "flex", alignItems: "center", gap: 9, color: COLORS.text, fontWeight: 800, marginBottom: 10, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={Boolean(value.finished)}
+            onChange={(e) =>
+              setValue((p) => ({
+                ...p,
+                finished: e.target.checked,
+                finishDate: e.target.checked ? p.finishDate || today() : "",
+              }))
+            }
+            style={{ width: 18, height: 18, accentColor: COLORS.purple }}
+          />
+          已玩完 / 通关了
+        </label>
+
+        {value.finished && (
+          <Input
+            type="date"
+            value={value.finishDate || today()}
+            onChange={(v) => setValue((p) => ({ ...p, finishDate: v }))}
+            style={{ marginBottom: 10, width: 180 }}
+          />
+        )}
+
+        <Input
+          value={value.note}
+          onChange={(v) => setValue((p) => ({ ...p, note: v }))}
+          placeholder="文字感受：哪里好玩、哪里打动你、为什么喜欢/不喜欢……"
+          multiline
+          rows={4}
+          style={{ marginBottom: 12 }}
+        />
+
+        <div style={{ background: "rgba(224,240,255,.5)", borderRadius: 16, padding: "12px", marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ color: COLORS.blue, fontWeight: 900, fontSize: 15 }}>截图墙</div>
+            <ScreenshotPicker onFiles={(files) => addScreenshotsToForm(files, setValue)} />
+          </div>
+          <div style={{ color: COLORS.muted, fontSize: 13, lineHeight: 1.7, marginTop: 7 }}>
+            截图会保存在浏览器本地。图片太多时，本地存储可能会满，可以只留最有代表性的几张。
+          </div>
+          <ScreenshotGrid screenshots={value.screenshots || []} onDelete={(id) => deleteScreenshotFromForm(id, setValue)} />
+        </div>
+      </>
+    );
+  };
+
+  const SectionHeader = ({ section, count }: { section: "playing" | "finished"; count: number }) => {
+    const meta = GAME_SECTION_META[section];
+    return (
+      <button
+        type="button"
+        onClick={() => setCollapsed((prev) => ({ ...prev, [section]: !prev[section] }))}
+        style={{
+          width: "100%",
+          border: "none",
+          background: "transparent",
+          padding: 0,
+          margin: "18px 0 10px",
+          cursor: "pointer",
+          fontFamily: "inherit",
+          textAlign: "left",
+        }}
+      >
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          background: "rgba(255,255,255,.72)",
+          border: `1.5px solid ${meta.color}33`,
+          borderRadius: 18,
+          padding: "12px 14px",
+          boxShadow: "0 2px 12px rgba(61,34,24,.05)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 22 }}>{meta.emoji}</span>
+            <strong style={{ color: COLORS.text, fontSize: 17, fontWeight: 900 }}>{meta.title}</strong>
+            <Tag color={COLORS.light} textColor={meta.color}>{count}个</Tag>
+          </div>
+          <span style={{ color: meta.color, fontSize: 18, fontWeight: 900 }}>
+            {collapsed[section] ? "⌄" : "⌃"}
+          </span>
+        </div>
+      </button>
+    );
+  };
+
+  const GameCard = ({ game }: { game: GameEntry }) => {
+    const preference = normalizeGamePreference(game.preference);
+    const preferenceMeta = GAME_PREFERENCE_META[preference];
+    const statusMeta = game.finished ? GAME_SECTION_META.finished : GAME_SECTION_META.playing;
+    const screenshots = game.screenshots || [];
+
+    return (
+      <Card style={{ borderLeft: `4px solid ${statusMeta.color}` }}>
+        {editId === game.id ? (
+          <>
+            {Fields({ value: editForm, setValue: setEditForm })}
+            <FormActions onSave={saveEdit} onCancel={() => setEditId(null)} saveText="保存修改" color={statusMeta.color} />
+          </>
+        ) : (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+              <div style={{ minWidth: 0, flex: "1 1 220px" }}>
+                <div style={{ color: COLORS.text, fontSize: 18, fontWeight: 900, lineHeight: 1.45, wordBreak: "break-word" }}>
+                  {game.title}
+                </div>
+                {game.platform && <div style={{ color: COLORS.muted, fontSize: 14, marginTop: 3 }}>平台：{game.platform}</div>}
+              </div>
+              <Tag color={game.finished ? "#F3EEFF" : "#E0F0FF"} textColor={statusMeta.color}>
+                {game.finished ? "已玩完" : "游玩中"}
+              </Tag>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+              <Tag color={`${preferenceMeta.color}22`} textColor={preferenceMeta.color}>{preferenceMeta.emoji} {preferenceMeta.label}</Tag>
+              {game.playTime && <Tag color={COLORS.soft}>⏱ {game.playTime}</Tag>}
+              {game.finished && game.finishDate && <Tag color="#F3EEFF" textColor={COLORS.purple}>完成：{fmtDateWithYear(game.finishDate)}</Tag>}
+              {screenshots.length > 0 && <Tag color="#E0F0FF" textColor={COLORS.blue}>📷 {screenshots.length} 张截图</Tag>}
+            </div>
+
+            {game.note && (
+              <p style={{ margin: "12px 0 0", color: COLORS.muted, fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                {game.note}
+              </p>
+            )}
+
+            <ScreenshotGrid screenshots={screenshots} onDelete={(id) => deleteScreenshotFromGame(game.id, id)} />
+
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Btn small color={game.finished ? COLORS.blue : COLORS.purple} onClick={() => toggleFinished(game)}>
+                  {game.finished ? "改成未玩完" : "标记已玩完"}
+                </Btn>
+                <ScreenshotPicker label="+ 加截图" color={COLORS.blue} onFiles={(files) => addScreenshotsToGame(game.id, files)} />
+              </div>
+              <ActionButtons
+                onEdit={() => {
+                  setAdding(false);
+                  setEditId(game.id);
+                  setEditForm({
+                    title: game.title || "",
+                    platform: game.platform || "",
+                    playTime: game.playTime || "",
+                    preference,
+                    note: game.note || "",
+                    finished: Boolean(game.finished),
+                    finishDate: game.finishDate || "",
+                    screenshots: screenshots || [],
+                  });
+                }}
+                onDelete={() => deleteGame(game.id)}
+              />
+            </div>
+          </>
+        )}
+      </Card>
+    );
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
+        <div>
+          <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.blue, flexShrink: 0 }} />
+            游戏记录 🎮
+          </h2>
+          <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6, paddingLeft: 12 }}>
+            记录玩过什么、截图、感受、时长、喜欢还是不喜欢；玩完后可以一键收进通关柜。
+          </div>
+        </div>
+        <Btn onClick={() => setAdding(!adding)} small color={COLORS.blue}>
+          {adding ? "取消" : "+ 加一个游戏"}
+        </Btn>
+      </div>
+
+      <Card style={{ border: `2px solid ${COLORS.blue}`, background: "linear-gradient(160deg, #FFFFFF 0%, #F4FAFF 100%)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10 }}>
+          <div style={{ background: "rgba(104,152,184,.12)", borderRadius: 18, padding: "12px", textAlign: "center" }}>
+            <div style={{ color: COLORS.blue, fontSize: 26, fontWeight: 900 }}>{cleanedData.length}</div>
+            <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>记录的游戏</div>
+          </div>
+          <div style={{ background: "rgba(164,143,192,.12)", borderRadius: 18, padding: "12px", textAlign: "center" }}>
+            <div style={{ color: COLORS.purple, fontSize: 26, fontWeight: 900 }}>{finishedCount}</div>
+            <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>已玩完</div>
+          </div>
+          <div style={{ background: "rgba(104,174,126,.12)", borderRadius: 18, padding: "12px", textAlign: "center" }}>
+            <div style={{ color: COLORS.green, fontSize: 26, fontWeight: 900 }}>{likedCount}</div>
+            <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>喜欢</div>
+          </div>
+          <div style={{ background: "rgba(232,115,90,.1)", borderRadius: 18, padding: "12px", textAlign: "center" }}>
+            <div style={{ color: COLORS.primary, fontSize: 26, fontWeight: 900 }}>{screenshotCount}</div>
+            <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>截图</div>
+          </div>
+        </div>
+      </Card>
+
+      {adding && (
+        <Card style={{ border: `2px solid ${COLORS.blue}` }}>
+          {Fields({ value: form, setValue: setForm })}
+          <FormActions onSave={save} onCancel={resetAddForm} saveText="保存这个游戏 🎮" color={COLORS.blue} />
+        </Card>
+      )}
+
+      {cleanedData.length === 0 && !adding && <EmptyState emoji="🎮" text="还没有游戏记录。先加一个最近玩过的，哪怕只写一句感受也很值。" />}
+
+      {GAME_SECTION_ORDER.map((section) => (
+        <div key={section}>
+          <SectionHeader section={section} count={grouped[section].length} />
+          {!collapsed[section] && (
+            <div>
+              {grouped[section].length === 0 ? (
+                <EmptyState emoji={GAME_SECTION_META[section].emoji} text={GAME_SECTION_META[section].empty} />
+              ) : (
+                grouped[section].map((game) => <GameCard key={game.id} game={game} />)
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── App Shell ────────────────────────────────────────────────────────────────
 export default function CoupleDiary() {
   const [activeTab, setActiveTab] = useState<TabId>("diary");
@@ -3666,6 +4247,7 @@ export default function CoupleDiary() {
   const [fiveYearDiary, setFiveYearDiary] = useLocalStorage<FiveYearDiaryData>("couple-diary-five-year-v1", {});
   const [fiveYearPhotos, setFiveYearPhotos] = useLocalStorage<FiveYearPhotosData>("couple-diary-fiveyear-photos-v1", {});
   const [readingBooks, setReadingBooks] = useLocalStorage<ReadingBookEntry[]>("couple-diary-reading-v1", []);
+  const [gameEntries, setGameEntries] = useLocalStorage<GameEntry[]>("couple-diary-games-v1", []);
   const [successEntries, setSuccessEntries] = useLocalStorage<SuccessEntry[]>("couple-diary-success-v1", []);
 
   const renderTab = () => {
@@ -3674,6 +4256,7 @@ export default function CoupleDiary() {
       case "success":  return <SuccessDiaryTab data={successEntries} setData={setSuccessEntries} />;
       case "fiveYear": return <FiveYearDiaryTab data={fiveYearDiary} setData={setFiveYearDiary} diary={diary} setDiary={setDiary} successEntries={successEntries} photos={fiveYearPhotos} setPhotos={setFiveYearPhotos} />;
       case "reading":  return <ReadingTab  data={readingBooks} setData={setReadingBooks} />;
+      case "games":    return <GameTrackerTab data={gameEntries} setData={setGameEntries} />;
       case "checkin":  return <CheckinTab  data={checkins}     setData={setCheckins} />;
       case "schedule": return <ScheduleTab data={schedule}     setData={setSchedule} />;
       case "shopping": return <ShoppingTab data={shopping}     setData={setShopping} />;
