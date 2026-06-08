@@ -40,6 +40,7 @@ type TabId =
   | "fiveYear"
   | "reading"
   | "games"
+  | "crochet"
   | "checkin"
   | "schedule"
   | "shopping"
@@ -56,6 +57,7 @@ const TABS: { id: TabId; icon: string; label: string }[] = [
   { id: "fiveYear", icon: "📚", label: "五年日记" },
   { id: "reading",  icon: "📕", label: "读书" },
   { id: "games",    icon: "🎮", label: "游戏记录" },
+  { id: "crochet",  icon: "🧶", label: "钩织记录" },
   { id: "checkin",  icon: "✅", label: "打卡" },
   { id: "schedule", icon: "🗓", label: "本周计划" },
   { id: "shopping", icon: "🛒", label: "购物清单" },
@@ -274,6 +276,16 @@ type GameEntry = BaseItem & {
   finished: boolean;
   finishDate: string;
   screenshots: GameScreenshot[];
+};
+
+type CrochetProjectStatus = "wip" | "done";
+
+type CrochetProjectEntry = BaseItem & {
+  status: CrochetProjectStatus;
+  name: string;
+  img: string;
+  desc: string;
+  completedAt?: number;
 };
 
 // ─── localStorage hook (unchanged) ───────────────────────────────────────────
@@ -4530,6 +4542,918 @@ function GameTrackerTab({ data, setData }: { data: GameEntry[]; setData: Setter<
   );
 }
 
+
+// ─── Crochet Journal ──────────────────────────────────────────────────────────
+type CrochetProjectForm = Omit<CrochetProjectEntry, keyof BaseItem | "completedAt">;
+
+const CROCHET_COLORS = {
+  cream: "#f5f0e8",
+  warmWhite: "#faf7f2",
+  tan: "#d6c9b0",
+  brown: "#8b6f4e",
+  darkBrown: "#3d2b1a",
+  rust: "#b5522a",
+  sage: "#7a8c6e",
+  dustyRose: "#c4856a",
+  ink: "#2c1f12",
+  mid: "#6b5240",
+};
+
+const CROCHET_BG_PATTERN =
+  "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c9b99a' fill-opacity='0.12'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")";
+
+const crochetStatusLabel = (status: CrochetProjectStatus) =>
+  status === "wip" ? "● 进行中" : "✓ 已完成";
+
+const crochetStatusColor = (status: CrochetProjectStatus) =>
+  status === "wip" ? CROCHET_COLORS.sage : CROCHET_COLORS.dustyRose;
+
+function CrochetJournalTab({
+  data,
+  setData,
+}: {
+  data: CrochetProjectEntry[];
+  setData: Setter<CrochetProjectEntry[]>;
+}) {
+  const blank = (status: CrochetProjectStatus = "wip"): CrochetProjectForm => ({
+    status,
+    name: "",
+    img: "",
+    desc: "",
+  });
+
+  const [section, setSection] = useState<CrochetProjectStatus>("wip");
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState<CrochetProjectForm>(blank("wip"));
+
+  const normalizedData = data.map((item) => ({
+    ...item,
+    status: item.status === "done" ? "done" : "wip",
+    name: item.name || "未命名钩织项目",
+    img: item.img || "",
+    desc: item.desc || "",
+  })) as CrochetProjectEntry[];
+
+  const wip = normalizedData
+    .filter((item) => item.status === "wip")
+    .sort((a, b) => b.createdAt - a.createdAt);
+  const done = normalizedData
+    .filter((item) => item.status === "done")
+    .sort((a, b) => (b.completedAt || b.updatedAt || b.createdAt) - (a.completedAt || a.updatedAt || a.createdAt));
+
+  const currentItems = section === "wip" ? wip : done;
+  const currentDetail = detailId ? normalizedData.find((item) => item.id === detailId) : null;
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setDetailId(null);
+        setFormOpen(false);
+        setEditId(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    const shouldLock = Boolean(currentDetail || formOpen);
+    const previous = document.body.style.overflow;
+    if (shouldLock) document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [currentDetail, formOpen]);
+
+  const openAddForm = (status: CrochetProjectStatus) => {
+    setDetailId(null);
+    setEditId(null);
+    setForm(blank(status));
+    setFormOpen(true);
+  };
+
+  const openEditForm = (project: CrochetProjectEntry) => {
+    setDetailId(null);
+    setEditId(project.id);
+    setForm({
+      status: project.status === "done" ? "done" : "wip",
+      name: project.name || "",
+      img: project.img || "",
+      desc: project.desc || "",
+    });
+    setFormOpen(true);
+  };
+
+  const closeModal = () => {
+    setDetailId(null);
+    setFormOpen(false);
+    setEditId(null);
+  };
+
+  const saveProject = () => {
+    const name = form.name.trim();
+    if (!name) {
+      alert("请输入项目名称");
+      return;
+    }
+
+    const cleaned: CrochetProjectForm = {
+      status: form.status === "done" ? "done" : "wip",
+      name,
+      img: form.img.trim(),
+      desc: form.desc.trim(),
+    };
+
+    if (editId) {
+      setData((prev) =>
+        prev.map((item) =>
+          item.id === editId
+            ? {
+                ...item,
+                ...cleaned,
+                completedAt: cleaned.status === "done" ? item.completedAt || now() : undefined,
+                updatedAt: now(),
+              }
+            : item
+        )
+      );
+    } else {
+      setData((prev) => [
+        {
+          id: uid(),
+          createdAt: now(),
+          completedAt: cleaned.status === "done" ? now() : undefined,
+          ...cleaned,
+        },
+        ...prev,
+      ]);
+    }
+
+    setSection(cleaned.status);
+    closeModal();
+  };
+
+  const markDone = (project: CrochetProjectEntry) => {
+    setData((prev) =>
+      prev.map((item) =>
+        item.id === project.id
+          ? { ...item, status: "done", completedAt: item.completedAt || now(), updatedAt: now() }
+          : item
+      )
+    );
+    setSection("done");
+    setDetailId(null);
+  };
+
+  const moveToWip = (project: CrochetProjectEntry) => {
+    setData((prev) =>
+      prev.map((item) =>
+        item.id === project.id
+          ? { ...item, status: "wip", completedAt: undefined, updatedAt: now() }
+          : item
+      )
+    );
+    setSection("wip");
+    setDetailId(null);
+  };
+
+  const deleteProject = (project: CrochetProjectEntry) => {
+    if (!window.confirm(`确定要删除「${project.name}」吗？这个操作不能撤销。`)) return;
+    setData((prev) => prev.filter((item) => item.id !== project.id));
+    setDetailId(null);
+    if (editId === project.id) closeModal();
+  };
+
+  const InputField = ({
+    label,
+    value,
+    onChange,
+    placeholder,
+    multiline = false,
+    type = "text",
+  }: {
+    label: string;
+    value: string;
+    onChange: (value: string) => void;
+    placeholder?: string;
+    multiline?: boolean;
+    type?: string;
+  }) => (
+    <div style={{ marginBottom: 20 }}>
+      <label
+        style={{
+          display: "block",
+          fontFamily: "'DM Mono', 'SFMono-Regular', Consolas, monospace",
+          fontSize: 12,
+          letterSpacing: "0.15em",
+          color: CROCHET_COLORS.brown,
+          marginBottom: 6,
+          textTransform: "uppercase",
+          fontWeight: 700,
+        }}
+      >
+        {label}
+      </label>
+      {multiline ? (
+        <textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          rows={6}
+          style={{
+            width: "100%",
+            background: CROCHET_COLORS.cream,
+            border: `1px solid ${CROCHET_COLORS.tan}`,
+            padding: "10px 14px",
+            fontFamily: "'Noto Serif SC', 'STSong', Georgia, serif",
+            fontSize: 15,
+            color: CROCHET_COLORS.ink,
+            borderRadius: 2,
+            outline: "none",
+            resize: "vertical",
+            minHeight: 120,
+            lineHeight: 1.8,
+          }}
+        />
+      ) : (
+        <input
+          type={type}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          style={{
+            width: "100%",
+            background: CROCHET_COLORS.cream,
+            border: `1px solid ${CROCHET_COLORS.tan}`,
+            padding: "10px 14px",
+            fontFamily: "'Noto Serif SC', 'STSong', Georgia, serif",
+            fontSize: 15,
+            color: CROCHET_COLORS.ink,
+            borderRadius: 2,
+            outline: "none",
+          }}
+        />
+      )}
+    </div>
+  );
+
+  const CrochetActionButton = ({
+    children,
+    onClick,
+    variant = "default",
+  }: {
+    children: React.ReactNode;
+    onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
+    variant?: "default" | "complete" | "danger";
+  }) => {
+    const color = variant === "complete" ? CROCHET_COLORS.sage : variant === "danger" ? CROCHET_COLORS.rust : CROCHET_COLORS.mid;
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="diary-btn"
+        style={{
+          border: `1px solid ${variant === "danger" ? "rgba(181,82,42,0.45)" : variant === "complete" ? CROCHET_COLORS.sage : CROCHET_COLORS.tan}`,
+          background: "rgba(255,255,255,0.45)",
+          color,
+          fontFamily: "'Noto Serif SC', 'STSong', Georgia, serif",
+          fontSize: 13,
+          lineHeight: 1,
+          padding: "8px 11px",
+          borderRadius: 999,
+          cursor: "pointer",
+          boxShadow: "none",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {children}
+      </button>
+    );
+  };
+
+  const ImageOrPlaceholder = ({
+    project,
+    large = false,
+  }: {
+    project?: Pick<CrochetProjectEntry, "img" | "name"> | null;
+    large?: boolean;
+  }) => {
+    const placeholder = (
+      <div
+        style={{
+          width: "100%",
+          aspectRatio: large ? "16 / 9" : "4 / 3",
+          background: "linear-gradient(135deg, #e8dccb 0%, #d6c9b0 100%)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: large ? 72 : 48,
+          color: CROCHET_COLORS.brown,
+          opacity: 0.55,
+        }}
+      >
+        🧶
+      </div>
+    );
+
+    if (!project?.img) return placeholder;
+
+    return (
+      <>
+        <img
+          src={project.img}
+          alt={project.name || "钩织项目"}
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+            const next = event.currentTarget.nextElementSibling as HTMLElement | null;
+            if (next) next.style.display = "flex";
+          }}
+          style={{
+            width: "100%",
+            aspectRatio: large ? "16 / 9" : "4 / 3",
+            objectFit: "cover",
+            display: "block",
+            background: CROCHET_COLORS.tan,
+          }}
+        />
+        <div style={{ ...placeholder.props.style, display: "none" }}>🧶</div>
+      </>
+    );
+  };
+
+  const AddCard = () => (
+    <button
+      type="button"
+      onClick={() => openAddForm(section)}
+      className="diary-btn"
+      style={{
+        border: `2px dashed ${CROCHET_COLORS.tan}`,
+        borderRadius: 2,
+        minHeight: 280,
+        cursor: "pointer",
+        transition: "border-color 0.2s, background 0.2s",
+        color: CROCHET_COLORS.brown,
+        opacity: 0.7,
+        background: "rgba(255,255,255,0.12)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 12,
+        fontFamily: "'Noto Serif SC', 'STSong', Georgia, serif",
+        boxShadow: "none",
+        padding: 20,
+      }}
+    >
+      <span style={{ fontSize: 36, lineHeight: 1 }}>＋</span>
+      <span
+        style={{
+          fontFamily: "'DM Mono', 'SFMono-Regular', Consolas, monospace",
+          fontSize: 12,
+          letterSpacing: "0.15em",
+        }}
+      >
+        添加新项目
+      </span>
+    </button>
+  );
+
+  const ProjectCard = ({ project }: { project: CrochetProjectEntry }) => {
+    const statusColor = crochetStatusColor(project.status);
+    const desc = (project.desc || "").slice(0, 120);
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setDetailId(project.id)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") setDetailId(project.id);
+        }}
+        className="diary-card-lift"
+        style={{
+          background: CROCHET_COLORS.warmWhite,
+          border: `1px solid ${CROCHET_COLORS.tan}`,
+          borderRadius: 2,
+          overflow: "hidden",
+          cursor: "pointer",
+          minWidth: 0,
+        }}
+      >
+        <ImageOrPlaceholder project={project} />
+        <div style={{ padding: "24px 24px 20px" }}>
+          <div
+            style={{
+              fontFamily: "'DM Mono', 'SFMono-Regular', Consolas, monospace",
+              fontSize: 11,
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+              marginBottom: 8,
+              color: statusColor,
+              fontWeight: 700,
+            }}
+          >
+            {crochetStatusLabel(project.status)}
+          </div>
+          <div
+            style={{
+              fontFamily: "'Playfair Display', 'Times New Roman', 'Noto Serif SC', serif",
+              fontSize: 22,
+              fontWeight: 700,
+              color: CROCHET_COLORS.darkBrown,
+              marginBottom: 12,
+              lineHeight: 1.3,
+              wordBreak: "break-word",
+            }}
+          >
+            {project.name}
+          </div>
+          <div
+            style={{
+              fontSize: 14,
+              color: CROCHET_COLORS.mid,
+              lineHeight: 1.75,
+              display: "-webkit-box",
+              WebkitLineClamp: 3,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              minHeight: 24,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+            }}
+          >
+            {desc || "还没有写图解/描述。"}
+          </div>
+        </div>
+        <div style={{ padding: "0 24px 20px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span
+            style={{
+              fontFamily: "'DM Mono', 'SFMono-Regular', Consolas, monospace",
+              fontSize: 12,
+              color: CROCHET_COLORS.rust,
+              letterSpacing: "0.1em",
+              borderBottom: `1px solid ${CROCHET_COLORS.rust}`,
+              paddingBottom: 1,
+            }}
+          >
+            查看详情 →
+          </span>
+          <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 6 }}>
+            {project.status === "wip" ? (
+              <CrochetActionButton
+                variant="complete"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  markDone(project);
+                }}
+              >
+                标记完成
+              </CrochetActionButton>
+            ) : null}
+            <CrochetActionButton
+              onClick={(event) => {
+                event.stopPropagation();
+                openEditForm(project);
+              }}
+            >
+              编辑
+            </CrochetActionButton>
+            <CrochetActionButton
+              variant="danger"
+              onClick={(event) => {
+                event.stopPropagation();
+                deleteProject(project);
+              }}
+            >
+              删除
+            </CrochetActionButton>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const Overlay = ({ children, onClose }: { children: React.ReactNode; onClose: () => void }) => (
+    <div
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(44,31,18,0.65)",
+        zIndex: 1000,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+        backdropFilter: "blur(4px)",
+      }}
+    >
+      {children}
+    </div>
+  );
+
+  const DetailModal = () => {
+    if (!currentDetail) return null;
+    const statusColor = crochetStatusColor(currentDetail.status);
+    return (
+      <Overlay onClose={() => setDetailId(null)}>
+        <div
+          style={{
+            background: CROCHET_COLORS.warmWhite,
+            border: `1px solid ${CROCHET_COLORS.tan}`,
+            maxWidth: 720,
+            width: "100%",
+            maxHeight: "88vh",
+            overflowY: "auto",
+            borderRadius: 2,
+            boxShadow: "0 18px 70px rgba(44,31,18,.32)",
+          }}
+        >
+          <ImageOrPlaceholder project={currentDetail} large />
+          <div style={{ padding: "36px 40px 44px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+              <span
+                style={{
+                  fontFamily: "'DM Mono', 'SFMono-Regular', Consolas, monospace",
+                  fontSize: 11,
+                  letterSpacing: "0.18em",
+                  textTransform: "uppercase",
+                  color: statusColor,
+                  fontWeight: 700,
+                }}
+              >
+                {crochetStatusLabel(currentDetail.status)}
+              </span>
+              <button
+                type="button"
+                onClick={() => setDetailId(null)}
+                className="diary-btn"
+                style={{
+                  background: "none",
+                  border: `1px solid ${CROCHET_COLORS.tan}`,
+                  width: 36,
+                  height: 36,
+                  borderRadius: "50%",
+                  cursor: "pointer",
+                  fontSize: 18,
+                  color: CROCHET_COLORS.mid,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                  padding: 0,
+                  boxShadow: "none",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            <h2
+              style={{
+                fontFamily: "'Playfair Display', 'Times New Roman', 'Noto Serif SC', serif",
+                fontSize: 30,
+                fontWeight: 700,
+                color: CROCHET_COLORS.darkBrown,
+                margin: "0 0 8px",
+                lineHeight: 1.25,
+              }}
+            >
+              {currentDetail.name}
+            </h2>
+            <div
+              style={{
+                fontSize: 15,
+                color: CROCHET_COLORS.mid,
+                lineHeight: 1.9,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                minHeight: 40,
+              }}
+            >
+              {currentDetail.desc || "还没有写图解/描述。"}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 10,
+                marginTop: 28,
+                paddingTop: 22,
+                borderTop: `1px solid ${CROCHET_COLORS.tan}`,
+              }}
+            >
+              {currentDetail.status === "wip" ? (
+                <CrochetActionButton variant="complete" onClick={() => markDone(currentDetail)}>
+                  标记为已完成
+                </CrochetActionButton>
+              ) : (
+                <CrochetActionButton variant="complete" onClick={() => moveToWip(currentDetail)}>
+                  改回进行中
+                </CrochetActionButton>
+              )}
+              <CrochetActionButton onClick={() => openEditForm(currentDetail)}>编辑项目</CrochetActionButton>
+              <CrochetActionButton variant="danger" onClick={() => deleteProject(currentDetail)}>删除项目</CrochetActionButton>
+            </div>
+          </div>
+        </div>
+      </Overlay>
+    );
+  };
+
+  const FormModal = () => {
+    if (!formOpen) return null;
+    return (
+      <Overlay onClose={closeModal}>
+        <div
+          onClick={(event) => event.stopPropagation()}
+          style={{
+            background: CROCHET_COLORS.warmWhite,
+            border: `1px solid ${CROCHET_COLORS.tan}`,
+            maxWidth: 560,
+            width: "100%",
+            maxHeight: "88vh",
+            overflowY: "auto",
+            borderRadius: 2,
+            padding: 40,
+            boxShadow: "0 18px 70px rgba(44,31,18,.32)",
+          }}
+        >
+          <h3
+            style={{
+              fontFamily: "'Playfair Display', 'Times New Roman', 'Noto Serif SC', serif",
+              fontSize: 25,
+              color: CROCHET_COLORS.darkBrown,
+              margin: "0 0 28px",
+              lineHeight: 1.3,
+            }}
+          >
+            {editId ? "编辑钩织项目" : "添加钩织项目"}
+          </h3>
+
+          <InputField
+            label="项目名称"
+            value={form.name}
+            onChange={(value) => setForm((prev) => ({ ...prev, name: value }))}
+            placeholder="例：草莓贝雷帽"
+          />
+          <InputField
+            label="图片 URL（可选）"
+            value={form.img}
+            type="url"
+            onChange={(value) => setForm((prev) => ({ ...prev, img: value }))}
+            placeholder="https://..."
+          />
+          <div style={{ marginBottom: 20 }}>
+            <label
+              style={{
+                display: "block",
+                fontFamily: "'DM Mono', 'SFMono-Regular', Consolas, monospace",
+                fontSize: 12,
+                letterSpacing: "0.15em",
+                color: CROCHET_COLORS.brown,
+                marginBottom: 6,
+                textTransform: "uppercase",
+                fontWeight: 700,
+              }}
+            >
+              状态
+            </label>
+            <select
+              value={form.status}
+              onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.value as CrochetProjectStatus }))}
+              style={{
+                width: "100%",
+                background: CROCHET_COLORS.cream,
+                border: `1px solid ${CROCHET_COLORS.tan}`,
+                padding: "10px 14px",
+                fontFamily: "'Noto Serif SC', 'STSong', Georgia, serif",
+                fontSize: 15,
+                color: CROCHET_COLORS.ink,
+                borderRadius: 2,
+                outline: "none",
+              }}
+            >
+              <option value="wip">进行中</option>
+              <option value="done">已完成</option>
+            </select>
+          </div>
+          <InputField
+            label="图解 / 描述"
+            value={form.desc}
+            multiline
+            onChange={(value) => setForm((prev) => ({ ...prev, desc: value }))}
+            placeholder="材料、针法、进度备注……"
+          />
+
+          <div style={{ display: "flex", gap: 12, marginTop: 28, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={saveProject}
+              className="diary-btn"
+              style={{
+                background: CROCHET_COLORS.darkBrown,
+                color: CROCHET_COLORS.cream,
+                border: "none",
+                padding: "12px 28px",
+                fontFamily: "'Noto Serif SC', 'STSong', Georgia, serif",
+                fontSize: 15,
+                letterSpacing: "0.08em",
+                cursor: "pointer",
+                borderRadius: 2,
+                boxShadow: "none",
+              }}
+            >
+              保存
+            </button>
+            <button
+              type="button"
+              onClick={closeModal}
+              className="diary-btn"
+              style={{
+                background: "none",
+                border: `1px solid ${CROCHET_COLORS.tan}`,
+                padding: "12px 20px",
+                fontFamily: "'Noto Serif SC', 'STSong', Georgia, serif",
+                fontSize: 15,
+                color: CROCHET_COLORS.mid,
+                cursor: "pointer",
+                borderRadius: 2,
+                boxShadow: "none",
+              }}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      </Overlay>
+    );
+  };
+
+  return (
+    <div
+      style={{
+        width: "min(1100px, calc(100vw - 28px))",
+        marginLeft: "50%",
+        transform: "translateX(-50%)",
+        backgroundColor: CROCHET_COLORS.cream,
+        color: CROCHET_COLORS.ink,
+        fontFamily: "'Noto Serif SC', 'STSong', Georgia, serif",
+        fontWeight: 300,
+        lineHeight: 1.8,
+        backgroundImage: CROCHET_BG_PATTERN,
+        border: `1px solid ${CROCHET_COLORS.tan}`,
+        boxShadow: "0 8px 44px rgba(61,43,26,0.08)",
+        overflow: "hidden",
+      }}
+    >
+      <div style={{ textAlign: "center", padding: "56px 24px 42px", borderBottom: `1px solid ${CROCHET_COLORS.tan}` }}>
+        <div style={{ fontSize: 16, color: CROCHET_COLORS.brown, letterSpacing: "0.4em", marginBottom: 20, opacity: 0.7 }}>
+          ✦ ❧ ✦
+        </div>
+        <h1
+          style={{
+            fontFamily: "'Playfair Display', 'Times New Roman', 'Noto Serif SC', serif",
+            fontSize: "clamp(2.2rem, 6vw, 4rem)",
+            fontWeight: 700,
+            color: CROCHET_COLORS.darkBrown,
+            letterSpacing: "0.02em",
+            lineHeight: 1.15,
+            margin: 0,
+          }}
+        >
+          我的钩织日志
+          <em
+            style={{
+              display: "block",
+              fontStyle: "italic",
+              fontSize: "0.55em",
+              color: CROCHET_COLORS.brown,
+              fontWeight: 400,
+              letterSpacing: "0.15em",
+              marginTop: 6,
+            }}
+          >
+            Crochet Journal
+          </em>
+        </h1>
+        <div style={{ margin: "20px auto 0", width: 120, height: 2, background: `linear-gradient(90deg, transparent, ${CROCHET_COLORS.tan}, transparent)` }} />
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          gap: 0,
+          padding: "0 24px",
+          borderBottom: `1px solid ${CROCHET_COLORS.tan}`,
+          background: CROCHET_COLORS.warmWhite,
+          position: "sticky",
+          top: 0,
+          zIndex: 1,
+        }}
+      >
+        {([
+          ["wip", "🧶 进行中", wip.length],
+          ["done", "✨ 已完成", done.length],
+        ] as [CrochetProjectStatus, string, number][]).map(([id, label, count]) => {
+          const active = section === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setSection(id)}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontFamily: "'Noto Serif SC', 'STSong', Georgia, serif",
+                fontSize: 15,
+                fontWeight: active ? 700 : 400,
+                color: active ? CROCHET_COLORS.rust : CROCHET_COLORS.mid,
+                padding: "18px 28px",
+                letterSpacing: "0.12em",
+                borderBottom: `2px solid ${active ? CROCHET_COLORS.rust : "transparent"}`,
+                position: "relative",
+                top: 1,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {label} <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12 }}>({count})</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ padding: "48px 24px 84px" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 16, marginBottom: 40, flexWrap: "wrap" }}>
+          <h2
+            style={{
+              fontFamily: "'Playfair Display', 'Times New Roman', 'Noto Serif SC', serif",
+              fontSize: "clamp(1.6rem, 3vw, 2.2rem)",
+              color: CROCHET_COLORS.darkBrown,
+              fontWeight: 700,
+              margin: 0,
+            }}
+          >
+            {section === "wip" ? "进行中的项目" : "已完成的项目"}
+          </h2>
+          <span
+            style={{
+              fontFamily: "'DM Mono', 'SFMono-Regular', Consolas, monospace",
+              fontSize: 12,
+              color: CROCHET_COLORS.brown,
+              background: CROCHET_COLORS.tan,
+              padding: "2px 10px",
+              borderRadius: 20,
+              opacity: 0.8,
+              fontWeight: 700,
+            }}
+          >
+            {currentItems.length}
+          </span>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 28 }}>
+          {currentItems.map((project) => (
+            <ProjectCard key={project.id} project={project} />
+          ))}
+          <AddCard />
+        </div>
+
+        {currentItems.length === 0 && (
+          <div style={{ textAlign: "center", padding: "64px 20px 12px", color: CROCHET_COLORS.brown, opacity: 0.55 }}>
+            <div style={{ fontSize: 48 }}>🧵</div>
+            <p style={{ fontSize: 15, marginTop: 8 }}>
+              {section === "wip" ? "还没有进行中的钩织项目。" : "还没有已完成的钩织项目。"}
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div
+        style={{
+          textAlign: "center",
+          padding: 32,
+          borderTop: `1px solid ${CROCHET_COLORS.tan}`,
+          fontFamily: "'DM Mono', 'SFMono-Regular', Consolas, monospace",
+          fontSize: 12,
+          color: CROCHET_COLORS.brown,
+          letterSpacing: "0.12em",
+          opacity: 0.6,
+        }}
+      >
+        ❧ &nbsp; 用钩针记录每一针的时光 &nbsp; ❧
+      </div>
+
+      <DetailModal />
+      <FormModal />
+    </div>
+  );
+}
+
 // ─── App Shell ────────────────────────────────────────────────────────────────
 export default function CoupleDiary() {
   const [activeTab, setActiveTab] = useState<TabId>("diary");
@@ -4548,6 +5472,7 @@ export default function CoupleDiary() {
   const [fiveYearPhotos, setFiveYearPhotos] = useLocalStorage<FiveYearPhotosData>("couple-diary-fiveyear-photos-v1", {});
   const [readingBooks, setReadingBooks] = useLocalStorage<ReadingBookEntry[]>("couple-diary-reading-v1", []);
   const [gameEntries, setGameEntries] = useLocalStorage<GameEntry[]>("couple-diary-games-v1", []);
+  const [crochetProjects, setCrochetProjects] = useLocalStorage<CrochetProjectEntry[]>("couple-diary-crochet-v1", []);
   const [successEntries, setSuccessEntries] = useLocalStorage<SuccessEntry[]>("couple-diary-success-v1", []);
   const [moodLogEntries, setMoodLogEntries] = useLocalStorage<MoodLogEntry[]>("couple-diary-mood-log-v1", []);
 
@@ -4559,6 +5484,7 @@ export default function CoupleDiary() {
       case "fiveYear": return <FiveYearDiaryTab data={fiveYearDiary} setData={setFiveYearDiary} diary={diary} setDiary={setDiary} successEntries={successEntries} photos={fiveYearPhotos} setPhotos={setFiveYearPhotos} />;
       case "reading":  return <ReadingTab  data={readingBooks} setData={setReadingBooks} />;
       case "games":    return <GameTrackerTab data={gameEntries} setData={setGameEntries} />;
+      case "crochet":  return <CrochetJournalTab data={crochetProjects} setData={setCrochetProjects} />;
       case "checkin":  return <CheckinTab  data={checkins}     setData={setCheckins} />;
       case "schedule": return <ScheduleTab data={schedule}     setData={setSchedule} />;
       case "shopping": return <ShoppingTab data={shopping}     setData={setShopping} />;
