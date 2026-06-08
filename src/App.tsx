@@ -4,33 +4,33 @@ import type { CSSProperties, Dispatch, SetStateAction } from "react";
 
 // ─── Palette & helpers ────────────────────────────────────────────────────────
 const COLORS = {
-  bg: "#FFF6F2",
-  card: "#FFFFFF",
-  primary: "#E8735A",
-  secondary: "#F4A88A",
-  accent: "#D45B42",
-  soft: "#FDE8E0",
-  muted: "#9B7B72",
-  text: "#3D2218",
-  light: "#FFF0EA",
-  green: "#68AE7E",
-  blue: "#6898B8",
-  yellow: "#EEB848",
-  purple: "#A48FC0",
-  danger: "#D9534F",
+  bg: "#F7F1E5",
+  card: "#FFFDF7",
+  primary: "#6FA66A",
+  secondary: "#EBAAC0",
+  accent: "#C76C84",
+  soft: "#F6E7EC",
+  muted: "#7F7667",
+  text: "#2F2A20",
+  light: "#FFF8EA",
+  green: "#76A96F",
+  blue: "#79A9A4",
+  yellow: "#DDB65F",
+  purple: "#A58ABF",
+  danger: "#C95E5E",
 };
 
 // Gradient presets for buttons (keyed by flat color)
 const BTN_GRADIENTS: Record<string, string> = {
-  [COLORS.primary]:   "linear-gradient(140deg, #EE8068 0%, #DF6A50 100%)",
-  [COLORS.secondary]: "linear-gradient(140deg, #F8B898 0%, #EFA070 100%)",
-  [COLORS.green]:     "linear-gradient(140deg, #7AC28E 0%, #58A070 100%)",
-  [COLORS.blue]:      "linear-gradient(140deg, #7AAAC8 0%, #5888B0 100%)",
-  [COLORS.yellow]:    "linear-gradient(140deg, #F8CC68 0%, #E4A830 100%)",
-  [COLORS.purple]:    "linear-gradient(140deg, #BCA8D8 0%, #9880B8 100%)",
-  [COLORS.danger]:    "linear-gradient(140deg, #E86868 0%, #C84040 100%)",
-  [COLORS.muted]:     "linear-gradient(140deg, #B09088 0%, #9B7B72 100%)",
-  [COLORS.accent]:    "linear-gradient(140deg, #DC7060 0%, #C85040 100%)",
+  [COLORS.primary]:   "linear-gradient(140deg, #8DBD82 0%, #5F965E 100%)",
+  [COLORS.secondary]: "linear-gradient(140deg, #F2BFD0 0%, #E59CAF 100%)",
+  [COLORS.green]:     "linear-gradient(140deg, #90C884 0%, #67A461 100%)",
+  [COLORS.blue]:      "linear-gradient(140deg, #8EC3BE 0%, #679F99 100%)",
+  [COLORS.yellow]:    "linear-gradient(140deg, #EFD081 0%, #D5A84B 100%)",
+  [COLORS.purple]:    "linear-gradient(140deg, #BCA7D2 0%, #987DB6 100%)",
+  [COLORS.danger]:    "linear-gradient(140deg, #D87474 0%, #B94A4A 100%)",
+  [COLORS.muted]:     "linear-gradient(140deg, #9B907F 0%, #746C5F 100%)",
+  [COLORS.accent]:    "linear-gradient(140deg, #D8899D 0%, #BD6178 100%)",
 };
 
 type TabId =
@@ -50,20 +50,20 @@ type TabId =
   | "wishes";
 
 const TABS: { id: TabId; icon: string; label: string }[] = [
-  { id: "diary",    icon: "📖", label: "心情日记" },
-  { id: "moodLog",  icon: "🌈", label: "情绪log" },
-  { id: "success",  icon: "🏆", label: "成功日记" },
-  { id: "fiveYear", icon: "📚", label: "五年日记" },
-  { id: "reading",  icon: "📕", label: "读书" },
-  { id: "games",    icon: "🎮", label: "游戏记录" },
-  { id: "crochet",  icon: "🧶", label: "钩织记录" },
-  { id: "checkin",  icon: "✅", label: "打卡" },
-  { id: "schedule", icon: "🗓", label: "本周计划" },
-  { id: "shopping", icon: "🛒", label: "购物清单" },
-  { id: "whisper",  icon: "💌", label: "悄悄话" },
-  { id: "jokes",    icon: "😂", label: "笑话库" },
-  { id: "calendar", icon: "📅", label: "日历" },
-  { id: "wishes",   icon: "✨", label: "愿望清单" },
+  { id: "diary",    icon: "🌸", label: "心情花笺" },
+  { id: "moodLog",  icon: "🌦️", label: "情绪天气" },
+  { id: "success",  icon: "🌱", label: "小成功" },
+  { id: "fiveYear", icon: "🌳", label: "五年花历" },
+  { id: "reading",  icon: "📚", label: "阅读花架" },
+  { id: "games",    icon: "🎮", label: "游戏角落" },
+  { id: "crochet",  icon: "🧶", label: "钩织花篮" },
+  { id: "checkin",  icon: "💧", label: "打卡浇水" },
+  { id: "schedule", icon: "🪴", label: "本周花径" },
+  { id: "shopping", icon: "🧺", label: "采购花篮" },
+  { id: "whisper",  icon: "🕊️", label: "秘密花语" },
+  { id: "jokes",    icon: "🌼", label: "笑声花丛" },
+  { id: "calendar", icon: "🍃", label: "花园日历" },
+  { id: "wishes",   icon: "🌟", label: "愿望种子" },
 ];
 
 const today = () => {
@@ -316,7 +316,7 @@ const GlobalStyle = () => (
       width: 100%;
       max-width: 100%;
       overflow-x: hidden;
-      background: ${COLORS.bg};
+      background: radial-gradient(circle at 12% 8%, rgba(235,170,192,.28) 0, transparent 26%), radial-gradient(circle at 88% 0%, rgba(118,169,111,.22) 0, transparent 24%), ${COLORS.bg};
     }
 
     body {
@@ -330,8 +330,8 @@ const GlobalStyle = () => (
     }
 
     ::selection {
-      background: rgba(232, 115, 90, .22);
-      color: #3D2218;
+      background: rgba(111, 166, 106, .22);
+      color: #2F2A20;
     }
 
     img {
@@ -345,7 +345,7 @@ const GlobalStyle = () => (
     /* Input focus glow */
     .diary-input:focus {
       border-color: ${COLORS.primary} !important;
-      box-shadow: 0 0 0 3.5px rgba(232, 115, 90, .18) !important;
+      box-shadow: 0 0 0 3.5px rgba(111, 166, 106, .18) !important;
       background: #fff !important;
       outline: none;
     }
@@ -368,7 +368,7 @@ const GlobalStyle = () => (
       transition: box-shadow .22s ease, transform .22s ease !important;
     }
     .diary-card-lift:hover {
-      box-shadow: 0 4px 32px rgba(61,34,24,.13), 0 1px 4px rgba(61,34,24,.07), 0 0 0 1px rgba(240,190,170,.22) !important;
+      box-shadow: 0 8px 34px rgba(63,83,47,.14), 0 1px 4px rgba(63,83,47,.07), 0 0 0 1px rgba(235,170,192,.22) !important;
       transform: translateY(-2px);
     }
 
@@ -446,11 +446,11 @@ const Card = ({
   <div
     className={lift ? "diary-card-lift" : ""}
     style={{
-      background: "linear-gradient(175deg, #ffffff 0%, #fffaf8 100%)",
+      background: "linear-gradient(175deg, #FFFDF7 0%, #FFF8EA 100%)",
       borderRadius: 22,
       padding: "18px 20px",
       boxShadow:
-        "0 1px 2px rgba(61,34,24,.04), 0 4px 20px rgba(61,34,24,.08), 0 0 0 1px rgba(240,190,170,.16)",
+        "0 1px 2px rgba(47,42,32,.04), 0 4px 22px rgba(63,83,47,.09), 0 0 0 1px rgba(235,170,192,.18)",
       marginBottom: 14,
       width: "100%",
       maxWidth: "100%",
@@ -527,11 +527,11 @@ const Input = ({
     width: "100%",
     maxWidth: "100%",
     borderRadius: 14,
-    border: `1.5px solid rgba(232, 185, 165, .65)`,
+    border: `1.5px solid rgba(161, 183, 132, .55)`,
     padding: "12px 16px",
     fontSize: 16,
     fontFamily: "inherit",
-    background: "rgba(255, 248, 244, .7)",
+    background: "rgba(255, 252, 244, .78)",
     color: COLORS.text,
     outline: "none",
     resize: "vertical",
@@ -596,12 +596,12 @@ const EmptyState = ({ emoji, text }: { emoji: string; text: string }) => (
     textAlign: "center",
     padding: "52px 18px",
     color: COLORS.muted,
-    background: "linear-gradient(160deg, rgba(255,246,242,.9) 0%, rgba(255,255,255,.7) 100%)",
+    background: "linear-gradient(160deg, rgba(255,248,234,.92) 0%, rgba(255,253,247,.74) 100%)",
     borderRadius: 22,
-    border: "1.5px dashed rgba(232,115,90,.2)",
+    border: "1.5px dashed rgba(111,166,106,.22)",
     marginBottom: 14,
   }}>
-    <div className="diary-float" style={{ fontSize: 52, marginBottom: 16, filter: "drop-shadow(0 4px 12px rgba(232,115,90,.2))" }}>{emoji}</div>
+    <div className="diary-float" style={{ fontSize: 52, marginBottom: 16, filter: "drop-shadow(0 4px 12px rgba(111,166,106,.22))" }}>{emoji}</div>
     <div style={{ fontSize: 15, lineHeight: 1.9, maxWidth: 240, margin: "0 auto", fontWeight: 500 }}>{text}</div>
   </div>
 );
@@ -741,13 +741,13 @@ function DiaryFields({
       <Input
         value={form.title}
         onChange={(v) => setForm((p) => ({ ...p, title: v }))}
-        placeholder="标题（今天发生了什么？）"
+        placeholder="花笺标题（今天发生了什么？）"
         style={{ marginBottom: 10 }}
       />
       <Input
         value={form.content}
         onChange={(v) => setForm((p) => ({ ...p, content: v }))}
-        placeholder="详细说说～"
+        placeholder="把这朵心情展开说说～"
         multiline
         rows={4}
         style={{ marginBottom: 12 }}
@@ -776,7 +776,7 @@ function DiaryTab({ data, setData }: { data: DiaryEntry[]; setData: Setter<Diary
         id: uid(),
         createdAt: now(),
         ...form,
-        title: cleanedTitle || "心情日记",
+        title: cleanedTitle || "心情花笺",
         content: cleanedContent,
         source: "diary",
       },
@@ -796,7 +796,7 @@ function DiaryTab({ data, setData }: { data: DiaryEntry[]; setData: Setter<Diary
           ? {
               ...entry,
               ...editForm,
-              title: cleanedTitle || "心情日记",
+              title: cleanedTitle || "心情花笺",
               content: cleanedContent,
               source: entry.source || "diary",
               updatedAt: now(),
@@ -823,9 +823,9 @@ function DiaryTab({ data, setData }: { data: DiaryEntry[]; setData: Setter<Diary
         fontWeight: 900,
       }}
     >
-      <span style={{ height: 1, flex: 1, background: "rgba(232,115,90,.22)" }} />
+      <span style={{ height: 1, flex: 1, background: "rgba(111,166,106,.22)" }} />
       <span>{year}</span>
-      <span style={{ height: 1, flex: 1, background: "rgba(232,115,90,.22)" }} />
+      <span style={{ height: 1, flex: 1, background: "rgba(111,166,106,.22)" }} />
     </div>
   );
 
@@ -834,21 +834,21 @@ function DiaryTab({ data, setData }: { data: DiaryEntry[]; setData: Setter<Diary
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
         <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.primary, flexShrink: 0 }} />
-          心情日记 📖
+          心情花笺 🌸
         </h2>
         <Btn onClick={() => setAdding(!adding)} small>
-          {adding ? "取消" : "+ 写日记"}
+          {adding ? "取消" : "+ 种下一朵心情"}
         </Btn>
       </div>
 
       {adding && (
         <Card style={{ border: `2px solid ${COLORS.secondary}` }}>
           <DiaryFields form={form} setForm={setForm} />
-          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="保存这篇日记 💕" />
+          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="种进花园 🌸" />
         </Card>
       )}
 
-      {sorted.length === 0 && !adding && <EmptyState emoji="📖" text="还没有日记，快记录第一篇吧～" />}
+      {sorted.length === 0 && !adding && <EmptyState emoji="🌸" text="花园里还没有心情花笺。先种下第一朵吧～" />}
 
       {showCurrentYearDivider && <YearDivider year={currentYear} first />}
 
@@ -1103,10 +1103,10 @@ function MoodLogTab({ data, setData }: { data: MoodLogEntry[]; setData: Setter<M
         <div>
           <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.purple, flexShrink: 0 }} />
-            情绪log 🌈
+            情绪天气 🌦️
           </h2>
           <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6, paddingLeft: 12 }}>
-            像 Daylio 一样快速打点：选时间、选一个情绪、留一句话。不是分析自己，是给情绪留坐标。
+            像给花园记天气：选时间、选一个情绪、留一句话。不是审判自己，是给心事留坐标。
           </div>
         </div>
         <Btn
@@ -1121,7 +1121,7 @@ function MoodLogTab({ data, setData }: { data: MoodLogEntry[]; setData: Setter<M
           small
           color={COLORS.purple}
         >
-          {adding ? "取消" : "+ 记一条情绪"}
+          {adding ? "取消" : "+ 记一阵天气"}
         </Btn>
       </div>
 
@@ -1131,7 +1131,7 @@ function MoodLogTab({ data, setData }: { data: MoodLogEntry[]; setData: Setter<M
             <div style={{ color: COLORS.purple, fontSize: 26, fontWeight: 900 }}>{todayEntries.length}</div>
             <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>今天记录</div>
           </div>
-          <div style={{ background: "rgba(232,115,90,.1)", borderRadius: 18, padding: "12px", textAlign: "center" }}>
+          <div style={{ background: "rgba(235,170,192,.16)", borderRadius: 18, padding: "12px", textAlign: "center" }}>
             <div style={{ color: COLORS.primary, fontSize: 26, fontWeight: 900 }}>{data.length}</div>
             <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>总情绪点</div>
           </div>
@@ -1149,11 +1149,11 @@ function MoodLogTab({ data, setData }: { data: MoodLogEntry[]; setData: Setter<M
       {adding && (
         <Card style={{ border: `2px solid ${COLORS.purple}` }}>
           {Fields({ value: form, setValue: setForm })}
-          <FormActions onSave={save} onCancel={resetAddForm} saveText="保存情绪log 🌈" color={COLORS.purple} />
+          <FormActions onSave={save} onCancel={resetAddForm} saveText="保存情绪天气 🌦️" color={COLORS.purple} />
         </Card>
       )}
 
-      {sorted.length === 0 && !adding && <EmptyState emoji="🌈" text="还没有情绪log。先不用写长篇，选一个情绪，加一句话就够了。" />}
+      {sorted.length === 0 && !adding && <EmptyState emoji="🌦️" text="还没有情绪天气。先不用写长篇，选一个情绪，加一句话就够了。" />}
 
       {Object.entries(groupedByDate).map(([date, entries]) => (
         <div key={date}>
@@ -1406,14 +1406,14 @@ function SuccessDiaryTab({ data, setData }: { data: SuccessEntry[]; setData: Set
         <div>
           <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.green, flexShrink: 0 }} />
-            成功日记 🏆
+            小成功苗圃 🌱
           </h2>
           <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6, paddingLeft: 12 }}>
-            只记录事实：我做了，它存在。再小也算数。
+            只记录事实：我做了，它存在。再小也是一棵苗。
           </div>
         </div>
         <Btn onClick={() => setAdding(!adding)} small color={COLORS.green}>
-          {adding ? "取消" : "+ 记一件小成功"}
+          {adding ? "取消" : "+ 种一棵小成功"}
         </Btn>
       </div>
 
@@ -1423,7 +1423,7 @@ function SuccessDiaryTab({ data, setData }: { data: SuccessEntry[]; setData: Set
             <div style={{ color: COLORS.green, fontSize: 26, fontWeight: 900 }}>{todayEntries.length}</div>
             <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>今天的小成功</div>
           </div>
-          <div style={{ background: "rgba(232,115,90,.1)", borderRadius: 18, padding: "12px", textAlign: "center" }}>
+          <div style={{ background: "rgba(235,170,192,.16)", borderRadius: 18, padding: "12px", textAlign: "center" }}>
             <div style={{ color: COLORS.primary, fontSize: 26, fontWeight: 900 }}>{data.length}</div>
             <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>总证据数</div>
           </div>
@@ -1441,11 +1441,11 @@ function SuccessDiaryTab({ data, setData }: { data: SuccessEntry[]; setData: Set
       {adding && (
         <Card style={{ border: `2px solid ${COLORS.green}` }}>
           {Fields({ value: form, setValue: setForm })}
-          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="收进证据库 🏆" color={COLORS.green} />
+          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="种进苗圃 🌱" color={COLORS.green} />
         </Card>
       )}
 
-      {data.length === 0 && !adding && <EmptyState emoji="🏆" text="还没有成功日记。先写一件小到不能再小的事：你做了，它就算。" />}
+      {data.length === 0 && !adding && <EmptyState emoji="🌱" text="苗圃还空着。先写一件小到不能再小的事：你做了，它就算。" />}
 
       {latestDayEntries.length > 0 && (
         <div style={{ margin: "16px 0 10px", color: COLORS.green, fontWeight: 900, fontSize: 16 }}>
@@ -1508,21 +1508,21 @@ function JokesTab({ data, setData }: { data: JokeEntry[]; setData: Setter<JokeEn
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
         <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.yellow, flexShrink: 0 }} />
-          笑话库 😂
+          笑声花丛 🌼
         </h2>
         <Btn onClick={() => setAdding(!adding)} small>
-          {adding ? "取消" : "+ 记笑话"}
+          {adding ? "取消" : "+ 收一朵笑声"}
         </Btn>
       </div>
 
       {adding && (
         <Card style={{ border: `2px solid ${COLORS.yellow}` }}>
           {Fields({ value: form, setValue: setForm })}
-          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="收进笑话库 😄" color={COLORS.yellow} />
+          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="放进笑声花丛 🌼" color={COLORS.yellow} />
         </Card>
       )}
 
-      {data.length === 0 && !adding && <EmptyState emoji="😂" text="还没有笑话，赶紧记下你们的专属笑点吧！" />}
+      {data.length === 0 && !adding && <EmptyState emoji="🌼" text="笑声花丛还空着，先记下一个专属笑点吧！" />}
 
       {data.map((joke) => (
         <Card key={joke.id} style={{ borderLeft: `4px solid ${COLORS.yellow}` }}>
@@ -1616,7 +1616,7 @@ function CalendarTab({ data, setData }: { data: CalendarData; setData: Setter<Ca
     <div>
       <h2 style={{ margin: "0 0 18px", color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.blue, flexShrink: 0 }} />
-        日历记录 📅
+        花园日历 🍃
       </h2>
 
       <Card>
@@ -1664,7 +1664,7 @@ function CalendarTab({ data, setData }: { data: CalendarData; setData: Setter<Ca
                   position: "relative",
                   minWidth: 0,
                   transition: "background .15s",
-                  boxShadow: isSelected ? "0 2px 8px rgba(232,112,86,.28)" : "none",
+                  boxShadow: isSelected ? "0 2px 8px rgba(111,166,106,.28)" : "none",
                 }}
               >
                 {d}
@@ -1767,7 +1767,7 @@ function WhisperTab({ data, setData }: { data: WhisperEntry[]; setData: Setter<W
       <Input
         value={value.content}
         onChange={(v) => setValue((p) => ({ ...p, content: v }))}
-        placeholder="想对TA说的悄悄话…"
+        placeholder="想藏进花园的话…"
         multiline
         rows={4}
         style={{ marginBottom: 12 }}
@@ -1780,21 +1780,21 @@ function WhisperTab({ data, setData }: { data: WhisperEntry[]; setData: Setter<W
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
         <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.purple, flexShrink: 0 }} />
-          悄悄话 💌
+          秘密花语 🕊️
         </h2>
         <Btn onClick={() => setAdding(!adding)} small color={COLORS.purple}>
-          {adding ? "取消" : "+ 写悄悄话"}
+          {adding ? "取消" : "+ 写一束花语"}
         </Btn>
       </div>
 
       {adding && (
         <Card style={{ border: `2px solid ${COLORS.purple}` }}>
           {Fields({ value: form, setValue: setForm })}
-          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="偷偷放进信箱 🤫" color={COLORS.purple} />
+          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="藏进秘密花语 🕊️" color={COLORS.purple} />
         </Card>
       )}
 
-      {data.length === 0 && !adding && <EmptyState emoji="💌" text="还没有悄悄话，写下只属于你们的秘密吧～" />}
+      {data.length === 0 && !adding && <EmptyState emoji="🕊️" text="秘密花语还空着，写下一句只属于你们的话吧～" />}
 
       {data.map((msg) => (
         <Card key={msg.id} style={{ borderLeft: `4px solid ${COLORS.purple}` }}>
@@ -1815,7 +1815,7 @@ function WhisperTab({ data, setData }: { data: WhisperEntry[]; setData: Setter<W
               ) : (
                 <div style={{ textAlign: "center", marginBottom: 12 }}>
                   <div style={{ filter: "blur(8px)", color: COLORS.muted, fontSize: 16, marginBottom: 8, pointerEvents: "none", userSelect: "none" }}>
-                    这是一条悄悄话…
+                    这是一束秘密花语…
                   </div>
                   <Btn onClick={() => setRevealed((p) => ({ ...p, [msg.id]: true }))} small color={COLORS.purple}>
                     轻轻打开 💫
@@ -1947,21 +1947,21 @@ function WishesTab({ data, setData }: { data: WishEntry[]; setData: Setter<WishE
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
         <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.yellow, flexShrink: 0 }} />
-          愿望清单 ✨
+          愿望种子 🌟
         </h2>
         <Btn onClick={() => setAdding(!adding)} small color={COLORS.yellow} style={{ color: COLORS.text }}>
-          {adding ? "取消" : "+ 许愿"}
+          {adding ? "取消" : "+ 种一颗愿望"}
         </Btn>
       </div>
 
       {adding && (
         <Card style={{ border: `2px solid ${COLORS.yellow}` }}>
           {Fields({ value: form, setValue: setForm })}
-          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="许下这个愿望 🌙" color={COLORS.yellow} />
+          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="种下愿望种子 🌟" color={COLORS.yellow} />
         </Card>
       )}
 
-      {data.length === 0 && !adding && <EmptyState emoji="✨" text="还没有愿望，快写下你们的心愿吧！" />}
+      {data.length === 0 && !adding && <EmptyState emoji="🌟" text="还没有愿望种子，先种下一颗小小心愿吧！" />}
 
       {pending.map((w) => <div key={w.id}>{WishCard({ w })}</div>)}
 
@@ -2126,21 +2126,21 @@ function ScheduleTab({ data, setData }: { data: ScheduleEntry[]; setData: Setter
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
         <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.blue, flexShrink: 0 }} />
-          本周计划 🗓
+          本周花径 🪴
         </h2>
         <Btn onClick={() => setAdding(!adding)} small color={COLORS.blue}>
-          {adding ? "取消" : "+ 加计划"}
+          {adding ? "取消" : "+ 铺一段花径"}
         </Btn>
       </div>
 
       {adding && (
         <Card style={{ border: `2px solid ${COLORS.blue}` }}>
           {Fields({ value: form, setValue: setForm })}
-          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="加入本周 📅" color={COLORS.blue} />
+          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="铺到本周花径 🪴" color={COLORS.blue} />
         </Card>
       )}
 
-      {data.length === 0 && !adding && <EmptyState emoji="🗓" text="本周还没有计划，安排起来吧！" />}
+      {data.length === 0 && !adding && <EmptyState emoji="🪴" text="本周花径还空着，先铺一小段要走的路吧。" />}
 
       <div style={{ display: "grid", gap: 10 }}>
         {DAYS_ZH.map((day) =>
@@ -2459,21 +2459,21 @@ function CheckinTab({ data, setData }: { data: CheckinEntry[]; setData: Setter<C
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
         <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.green, flexShrink: 0 }} />
-          打卡 ✅
+          打卡浇水 💧
         </h2>
         <Btn onClick={() => setAdding(!adding)} small color={COLORS.green}>
-          {adding ? "取消" : "+ 添加项目"}
+          {adding ? "取消" : "+ 加一株要浇水的事"}
         </Btn>
       </div>
 
       {adding && (
         <Card style={{ border: `2px solid ${COLORS.green}` }}>
-          <Input value={name} onChange={setName} placeholder="项目名称，比如：早睡、运动、读书" style={{ marginBottom: 12 }} />
-          <FormActions onSave={addProject} onCancel={() => setAdding(false)} saveText="添加项目" color={COLORS.green} />
+          <Input value={name} onChange={setName} placeholder="要浇水的事，比如：早睡、运动、读书" style={{ marginBottom: 12 }} />
+          <FormActions onSave={addProject} onCancel={() => setAdding(false)} saveText="种下项目" color={COLORS.green} />
         </Card>
       )}
 
-      {sorted.length === 0 && !adding && <EmptyState emoji="✅" text="还没有打卡项目，先添加一个想坚持的小目标吧～" />}
+      {sorted.length === 0 && !adding && <EmptyState emoji="💧" text="还没有要浇水的项目，先种下一件想坚持的小事吧～" />}
 
       {sorted.map((item) => {
         const current = displayCurrentStreak(item);
@@ -2522,7 +2522,7 @@ function CheckinTab({ data, setData }: { data: CheckinEntry[]; setData: Setter<C
                 small
                 className={!checkedToday ? "diary-pulse" : ""}
               >
-                {checkedToday ? "今天已完成 ✓" : "打卡 ✅"}
+                {checkedToday ? "今天已完成 ✓" : "打卡浇水 💧"}
               </Btn>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <Btn
@@ -2767,7 +2767,7 @@ function ShoppingTab({ data, setData }: { data: ShoppingEntry[]; setData: Setter
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
         <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.green, flexShrink: 0 }} />
-          购物清单 🛒
+          采购花篮 🧺
         </h2>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
           {bought.length > 0 && (
@@ -2782,11 +2782,11 @@ function ShoppingTab({ data, setData }: { data: ShoppingEntry[]; setData: Setter
       {adding && (
         <Card style={{ border: `2px solid ${COLORS.green}` }}>
           {Fields({ value: form, setValue: setForm })}
-          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="加入清单 🛒" color={COLORS.green} />
+          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="放进采购花篮 🧺" color={COLORS.green} />
         </Card>
       )}
 
-      {data.length === 0 && !adding && <EmptyState emoji="🛒" text="购物清单还是空的，先加一个要买的东西吧～" />}
+      {data.length === 0 && !adding && <EmptyState emoji="🧺" text="采购花篮还是空的，先放一个要买的东西吧～" />}
 
       {todo.length > 0 && (
         <div>
@@ -3195,7 +3195,7 @@ function FiveYearDiaryTab({
         <div>
           <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.purple, flexShrink: 0 }} />
-            五年日记 📚
+            五年花历 🌳
           </h2>
           <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6, paddingLeft: 12 }}>
             同一天，看看今年和过去五年的自己。
@@ -3239,7 +3239,7 @@ function FiveYearDiaryTab({
               <div style={{ background: "rgba(243,238,255,.65)", borderRadius: 18, padding: "14px", marginBottom: 12, border: `1.5px solid rgba(164,143,192,.25)` }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
                   <Tag color="#F3EEFF">新增记录</Tag>
-                  <span style={{ color: COLORS.muted, fontSize: 13 }}>只保存在五年日记，不会出现在心情日记列表里。</span>
+                  <span style={{ color: COLORS.muted, fontSize: 13 }}>只保存在五年花历，不会出现在心情花笺列表里。</span>
                 </div>
                 {FiveYearFields({ value: form, setValue: setForm })}
                 <FormActions
@@ -3269,7 +3269,7 @@ function FiveYearDiaryTab({
                 <div key={entry.id} style={{ background: "rgba(232,248,235,.7)", borderRadius: 16, padding: "12px 14px", marginBottom: 10, borderLeft: `4px solid ${meta.color}` }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 22 }}>{entry.energy || meta.emoji}</span>
-                    <strong style={{ color: COLORS.text, fontSize: 16, wordBreak: "break-word" }}>成功日记</strong>
+                    <strong style={{ color: COLORS.text, fontSize: 16, wordBreak: "break-word" }}>小成功苗圃</strong>
                     <Tag color={`${meta.color}22`} textColor={meta.color}>{meta.emoji} {entry.category || meta.label}</Tag>
                   </div>
                   <div style={{ color: COLORS.text, fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
@@ -3288,7 +3288,7 @@ function FiveYearDiaryTab({
               <div key={entry.id} style={{ background: "rgba(253,232,224,.55)", borderRadius: 16, padding: "12px 14px", marginBottom: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 22 }}>{entry.mood}</span>
-                  <strong style={{ color: COLORS.text, fontSize: 16, wordBreak: "break-word" }}>{entry.title || "心情日记"}</strong>
+                  <strong style={{ color: COLORS.text, fontSize: 16, wordBreak: "break-word" }}>{entry.title || "心情花笺"}</strong>
                 </div>
                 {entry.content && (
                   <div style={{ color: COLORS.muted, fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
@@ -3807,10 +3807,10 @@ function ReadingTab({ data, setData }: { data: ReadingBookEntry[]; setData: Sett
         <div>
           <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.green, flexShrink: 0 }} />
-            读书记录 📕
+            阅读花架 📚
           </h2>
           <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6, paddingLeft: 12 }}>
-            正在读、想读、已读完分开收纳；已读完会自动按年月归档。
+            正在读、想读、已读完分开收纳；像给花架分层，已读完会自动按年月归档。
           </div>
         </div>
         <Btn onClick={() => setAdding(!adding)} small color={COLORS.green}>
@@ -3821,7 +3821,7 @@ function ReadingTab({ data, setData }: { data: ReadingBookEntry[]; setData: Sett
       {adding && (
         <Card style={{ border: `2px solid ${COLORS.green}` }}>
           {Fields({ value: form, setValue: setForm })}
-          <FormActions onSave={save} onCancel={resetAddForm} saveText="保存这本书" color={COLORS.green} />
+          <FormActions onSave={save} onCancel={resetAddForm} saveText="放上阅读花架" color={COLORS.green} />
         </Card>
       )}
 
@@ -4347,10 +4347,10 @@ function GameTrackerTab({ data, setData }: { data: GameEntry[]; setData: Setter<
         <div>
           <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.blue, flexShrink: 0 }} />
-            游戏记录 🎮
+            游戏角落 🎮
           </h2>
           <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6, paddingLeft: 12 }}>
-            记录玩过什么、截图、感受、时长、喜欢还是不喜欢；玩完后可以一键收进通关柜。
+            记录玩过什么、截图、感受、时长、喜欢还是不喜欢；这里是花园里可以撒野的游戏角落。
           </div>
         </div>
         <Btn onClick={() => setAdding(!adding)} small color={COLORS.blue}>
@@ -4372,7 +4372,7 @@ function GameTrackerTab({ data, setData }: { data: GameEntry[]; setData: Setter<
             <div style={{ color: COLORS.green, fontSize: 26, fontWeight: 900 }}>{likedCount}</div>
             <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>喜欢</div>
           </div>
-          <div style={{ background: "rgba(232,115,90,.1)", borderRadius: 18, padding: "12px", textAlign: "center" }}>
+          <div style={{ background: "rgba(235,170,192,.16)", borderRadius: 18, padding: "12px", textAlign: "center" }}>
             <div style={{ color: COLORS.primary, fontSize: 26, fontWeight: 900 }}>{screenshotCount}</div>
             <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>截图</div>
           </div>
@@ -5366,7 +5366,7 @@ export default function CoupleDiary() {
         width: "100%",
         maxWidth: "100%",
         overflowX: "hidden",
-        background: COLORS.bg,
+        background: "radial-gradient(circle at 10% 0%, rgba(235,170,192,.23) 0, transparent 28%), radial-gradient(circle at 90% 8%, rgba(118,169,111,.22) 0, transparent 26%), radial-gradient(circle at 50% 100%, rgba(221,182,95,.12) 0, transparent 34%), " + COLORS.bg,
         fontFamily: "'PingFang SC', 'Noto Serif SC', 'STSong', 'Georgia', 'Microsoft YaHei', serif",
         fontSize: 17,
         color: COLORS.text,
@@ -5377,46 +5377,63 @@ export default function CoupleDiary() {
       {/* ── Header ── */}
       <div
         style={{
-          background: "linear-gradient(135deg, #B84830 0%, #D96045 25%, #E87858 55%, #F09870 80%, #F8B890 100%)",
-          padding: "20px 20px 18px",
+          background: "linear-gradient(135deg, #527D4E 0%, #6FA66A 32%, #D997AD 72%, #F3C8D6 100%)",
+          padding: "18px 20px 16px",
           textAlign: "center",
           position: "sticky",
           top: 0,
           zIndex: 100,
           width: "100%",
           maxWidth: "100%",
-          boxShadow: "0 2px 28px rgba(184, 72, 48, .35)",
+          boxShadow: "0 6px 30px rgba(82, 125, 78, .28)",
+          overflow: "hidden",
+          borderBottom: "1px solid rgba(255,255,255,.35)",
         }}
       >
-        <div style={{
-          fontSize: 10,
-          color: "rgba(255,255,255,.65)",
-          letterSpacing: 5,
-          marginBottom: 3,
-          textTransform: "uppercase",
-          fontWeight: 700,
-        }}>
-          OUR LITTLE WORLD
-        </div>
-        <h1 style={{
-          margin: 0,
-          color: "#fff",
-          fontSize: 26,
-          fontWeight: 900,
-          letterSpacing: 0.5,
-          textShadow: "0 2px 14px rgba(0,0,0,.2)",
-          lineHeight: 1.3,
-        }}>
-          ❤️ 我的日记本
-        </h1>
-        <div style={{
-          marginTop: 4,
-          fontSize: 11,
-          color: "rgba(255,255,255,.55)",
-          letterSpacing: 1,
-          fontWeight: 500,
-        }}>
-          {new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}
+        <div style={{ position: "absolute", left: 18, top: 12, fontSize: 30, opacity: .25, transform: "rotate(-12deg)" }}>🌿</div>
+        <div style={{ position: "absolute", right: 22, top: 16, fontSize: 28, opacity: .28, transform: "rotate(10deg)" }}>🌷</div>
+        <div style={{ position: "absolute", left: "12%", bottom: -16, width: 72, height: 72, borderRadius: "50%", background: "rgba(255,255,255,.13)" }} />
+        <div style={{ position: "absolute", right: "10%", top: -26, width: 92, height: 92, borderRadius: "50%", background: "rgba(255,255,255,.12)" }} />
+        <div style={{ position: "relative" }}>
+          <div style={{
+            fontSize: 10,
+            color: "rgba(255,255,255,.74)",
+            letterSpacing: 4.5,
+            marginBottom: 3,
+            textTransform: "uppercase",
+            fontWeight: 800,
+          }}>
+            SECRET GARDEN FOR EVERYDAY THOUGHTS
+          </div>
+          <h1 style={{
+            margin: 0,
+            color: "#fff",
+            fontSize: 28,
+            fontWeight: 950,
+            letterSpacing: 1.2,
+            textShadow: "0 2px 16px rgba(47,42,32,.24)",
+            lineHeight: 1.25,
+          }}>
+            🌸 心事花园
+          </h1>
+          <div style={{
+            marginTop: 5,
+            fontSize: 12,
+            color: "rgba(255,255,255,.82)",
+            letterSpacing: 0.8,
+            fontWeight: 700,
+          }}>
+            把每天的心事种下，让它慢慢长成自己的花
+          </div>
+          <div style={{
+            marginTop: 3,
+            fontSize: 11,
+            color: "rgba(255,255,255,.62)",
+            letterSpacing: 1,
+            fontWeight: 500,
+          }}>
+            {new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}
+          </div>
         </div>
       </div>
 
@@ -5427,18 +5444,18 @@ export default function CoupleDiary() {
           display: "flex",
           overflowX: "auto",
           overflowY: "hidden",
-          gap: 2,
-          background: "rgba(255,252,250,.97)",
+          gap: 6,
+          background: "rgba(255,253,247,.88)",
           backdropFilter: "blur(20px)",
           WebkitBackdropFilter: "blur(20px)",
-          borderBottom: "1px solid rgba(240,195,175,.4)",
+          borderBottom: "1px solid rgba(161,183,132,.28)",
           position: "sticky",
-          top: 88,
+          top: 116,
           zIndex: 99,
           WebkitOverflowScrolling: "touch",
           width: "100%",
           maxWidth: "100%",
-          padding: "6px 6px 4px",
+          padding: "7px 8px 5px",
         }}
       >
         {TABS.map((tab) => {
@@ -5452,17 +5469,17 @@ export default function CoupleDiary() {
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                padding: "6px 13px 5px",
+                padding: "7px 13px 6px",
                 border: "none",
                 background: active
-                  ? "linear-gradient(145deg, rgba(232,112,86,.18), rgba(244,168,138,.11))"
-                  : "transparent",
-                borderRadius: 14,
+                  ? "linear-gradient(145deg, rgba(111,166,106,.18), rgba(235,170,192,.15))"
+                  : "rgba(255,255,255,.25)",
+                borderRadius: 16,
                 cursor: "pointer",
                 color: active ? COLORS.primary : COLORS.muted,
                 fontFamily: "inherit",
                 flex: "0 0 auto",
-                boxShadow: active ? "0 1px 10px rgba(232,112,86,.16), 0 0 0 1.5px rgba(232,112,86,.15)" : "none",
+                boxShadow: active ? "0 1px 10px rgba(111,166,106,.16), 0 0 0 1.5px rgba(235,170,192,.24)" : "none",
               }}
             >
               <span style={{ fontSize: 20, lineHeight: 1 }}>{tab.icon}</span>
