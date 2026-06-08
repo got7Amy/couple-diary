@@ -35,6 +35,7 @@ const BTN_GRADIENTS: Record<string, string> = {
 
 type TabId =
   | "diary"
+  | "moodLog"
   | "success"
   | "fiveYear"
   | "reading"
@@ -50,6 +51,7 @@ type TabId =
 
 const TABS: { id: TabId; icon: string; label: string }[] = [
   { id: "diary",    icon: "📖", label: "心情日记" },
+  { id: "moodLog",  icon: "🌈", label: "情绪log" },
   { id: "success",  icon: "🏆", label: "成功日记" },
   { id: "fiveYear", icon: "📚", label: "五年日记" },
   { id: "reading",  icon: "📕", label: "读书" },
@@ -72,6 +74,16 @@ const today = () => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+const currentLocalDateTime = () => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+};
+
 const toLocalDate = (dateStr: string) => {
   const [y, m, d] = dateStr.split("-").map(Number);
   return new Date(y || 2000, (m || 1) - 1, d || 1);
@@ -91,6 +103,19 @@ const fmtDateWithYear = (d: string) =>
     day: "numeric",
     weekday: "short",
   });
+
+const fmtDateTime = (value: string) => {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const now = () => Date.now();
@@ -119,6 +144,12 @@ type SuccessEntry = BaseItem & {
   category: string;
   evidence: string;
   energy: string;
+};
+
+type MoodLogEntry = BaseItem & {
+  datetime: string;
+  mood: string;
+  note: string;
 };
 
 type FiveYearDiaryEntry = BaseItem & {
@@ -859,6 +890,275 @@ function DiaryTab({ data, setData }: { data: DiaryEntry[]; setData: Setter<Diary
           </div>
         );
       })}
+    </div>
+  );
+}
+
+
+// ─── Mood Log ─────────────────────────────────────────────────────────────────
+type MoodLogForm = Omit<MoodLogEntry, keyof BaseItem>;
+
+const MOOD_LOG_OPTIONS = [
+  { label: "高兴", emoji: "😊", color: COLORS.green },
+  { label: "兴奋", emoji: "🥳", color: COLORS.yellow },
+  { label: "感激", emoji: "🙏", color: COLORS.purple },
+  { label: "放松", emoji: "😌", color: COLORS.blue },
+  { label: "满意", emoji: "☺️", color: COLORS.green },
+  { label: "疲劳", emoji: "😴", color: COLORS.muted },
+  { label: "没信心", emoji: "🥺", color: COLORS.muted },
+  { label: "无聊", emoji: "😐", color: COLORS.muted },
+  { label: "焦虑", emoji: "😰", color: COLORS.yellow },
+  { label: "生气", emoji: "😤", color: COLORS.danger },
+  { label: "压力", emoji: "😵‍💫", color: COLORS.accent },
+  { label: "悲伤", emoji: "😢", color: COLORS.blue },
+  { label: "绝望", emoji: "😭", color: COLORS.purple },
+  { label: "不公平", emoji: "⚖️", color: COLORS.danger },
+  { label: "期待", emoji: "🤩", color: COLORS.yellow },
+  { label: "幸运", emoji: "🍀", color: COLORS.green },
+  { label: "平静", emoji: "🌿", color: COLORS.green },
+  { label: "有信心", emoji: "😎", color: COLORS.blue },
+  { label: "兴致勃勃", emoji: "🔥", color: COLORS.primary },
+];
+
+const getMoodLogMeta = (mood?: string) =>
+  MOOD_LOG_OPTIONS.find((item) => item.label === mood) || MOOD_LOG_OPTIONS[0];
+
+const getMoodLogDateKey = (entry: Pick<MoodLogEntry, "datetime">) =>
+  (entry.datetime || currentLocalDateTime()).slice(0, 10);
+
+function MoodLogTab({ data, setData }: { data: MoodLogEntry[]; setData: Setter<MoodLogEntry[]> }) {
+  const blank = (): MoodLogForm => ({
+    datetime: currentLocalDateTime(),
+    mood: "平静",
+    note: "",
+  });
+
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState<MoodLogForm>(blank());
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<MoodLogForm>(blank());
+
+  const sorted = [...data].sort((a, b) =>
+    (b.datetime || "").localeCompare(a.datetime || "") || b.createdAt - a.createdAt
+  );
+
+  const todayEntries = sorted.filter((entry) => getMoodLogDateKey(entry) === today());
+  const totalDays = new Set(sorted.map(getMoodLogDateKey)).size;
+  const recentMood = sorted[0]?.mood;
+  const groupedByDate = sorted.reduce<Record<string, MoodLogEntry[]>>((acc, entry) => {
+    const key = getMoodLogDateKey(entry);
+    acc[key] = acc[key] || [];
+    acc[key].push(entry);
+    return acc;
+  }, {});
+
+  const resetAddForm = () => {
+    setForm(blank());
+    setAdding(false);
+  };
+
+  const save = () => {
+    const mood = form.mood || "平静";
+    const note = form.note.trim();
+    setData((prev) => [
+      {
+        id: uid(),
+        createdAt: now(),
+        datetime: form.datetime || currentLocalDateTime(),
+        mood,
+        note,
+      },
+      ...prev,
+    ]);
+    resetAddForm();
+  };
+
+  const saveEdit = () => {
+    if (!editId) return;
+    setData((prev) =>
+      prev.map((entry) =>
+        entry.id === editId
+          ? {
+              ...entry,
+              datetime: editForm.datetime || currentLocalDateTime(),
+              mood: editForm.mood || "平静",
+              note: editForm.note.trim(),
+              updatedAt: now(),
+            }
+          : entry
+      )
+    );
+    setEditId(null);
+  };
+
+  const Fields = ({ value, setValue }: { value: MoodLogForm; setValue: Setter<MoodLogForm> }) => (
+    <>
+      <Input
+        type="datetime-local"
+        value={value.datetime}
+        onChange={(v) => setValue((p) => ({ ...p, datetime: v || currentLocalDateTime() }))}
+        style={{ marginBottom: 12, width: 220 }}
+      />
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(92px, 1fr))", gap: 8, marginBottom: 12 }}>
+        {MOOD_LOG_OPTIONS.map((item) => {
+          const active = value.mood === item.label;
+          return (
+            <button
+              key={item.label}
+              type="button"
+              onClick={() => setValue((p) => ({ ...p, mood: item.label }))}
+              className="diary-btn"
+              style={{
+                border: active ? `2px solid ${item.color}` : "1.5px solid rgba(232,185,165,.5)",
+                background: active ? `${item.color}22` : "rgba(255,248,244,.72)",
+                color: active ? COLORS.text : COLORS.muted,
+                borderRadius: 16,
+                padding: "9px 8px",
+                cursor: "pointer",
+                fontWeight: active ? 900 : 700,
+                boxShadow: active ? "0 2px 12px rgba(61,34,24,.10)" : "none",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 5,
+                minHeight: 42,
+              }}
+            >
+              <span>{item.emoji}</span>
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <Input
+        value={value.note}
+        onChange={(v) => setValue((p) => ({ ...p, note: v }))}
+        placeholder="一句快速笔记：发生了什么 / 身体感觉 / 想记住什么（可选）"
+        multiline
+        rows={2}
+        style={{ marginBottom: 12 }}
+      />
+    </>
+  );
+
+  const MoodCard = ({ entry }: { entry: MoodLogEntry }) => {
+    const meta = getMoodLogMeta(entry.mood);
+    return (
+      <Card style={{ borderLeft: `4px solid ${meta.color}` }}>
+        {editId === entry.id ? (
+          <>
+            {Fields({ value: editForm, setValue: setEditForm })}
+            <FormActions onSave={saveEdit} onCancel={() => setEditId(null)} saveText="保存修改" color={meta.color} />
+          </>
+        ) : (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+                <span style={{ fontSize: 30 }}>{meta.emoji}</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: COLORS.text, fontSize: 18, fontWeight: 900 }}>{entry.mood || meta.label}</div>
+                  <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 700 }}>{fmtDateTime(entry.datetime)}</div>
+                </div>
+              </div>
+              <Tag color={`${meta.color}22`} textColor={meta.color}>{meta.label}</Tag>
+            </div>
+
+            {entry.note && (
+              <div style={{ background: COLORS.light, borderRadius: 14, padding: "10px 12px", color: COLORS.muted, fontSize: 15, lineHeight: 1.75, whiteSpace: "pre-wrap", wordBreak: "break-word", marginBottom: 12 }}>
+                {entry.note}
+              </div>
+            )}
+
+            <ActionButtons
+              onEdit={() => {
+                setAdding(false);
+                setEditId(entry.id);
+                setEditForm({
+                  datetime: entry.datetime || currentLocalDateTime(),
+                  mood: entry.mood || "平静",
+                  note: entry.note || "",
+                });
+              }}
+              onDelete={() => {
+                if (confirmDelete()) setData((prev) => prev.filter((item) => item.id !== entry.id));
+              }}
+            />
+          </>
+        )}
+      </Card>
+    );
+  };
+
+  const recentMeta = getMoodLogMeta(recentMood);
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
+        <div>
+          <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.purple, flexShrink: 0 }} />
+            情绪log 🌈
+          </h2>
+          <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6, paddingLeft: 12 }}>
+            像 Daylio 一样快速打点：选时间、选一个情绪、留一句话。不是分析自己，是给情绪留坐标。
+          </div>
+        </div>
+        <Btn
+          onClick={() => {
+            if (adding) {
+              resetAddForm();
+            } else {
+              setForm(blank());
+              setAdding(true);
+            }
+          }}
+          small
+          color={COLORS.purple}
+        >
+          {adding ? "取消" : "+ 记一条情绪"}
+        </Btn>
+      </div>
+
+      <Card style={{ border: `2px solid ${COLORS.purple}`, background: "linear-gradient(160deg, #FFFFFF 0%, #F8F4FF 100%)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10 }}>
+          <div style={{ background: "rgba(164,143,192,.12)", borderRadius: 18, padding: "12px", textAlign: "center" }}>
+            <div style={{ color: COLORS.purple, fontSize: 26, fontWeight: 900 }}>{todayEntries.length}</div>
+            <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>今天记录</div>
+          </div>
+          <div style={{ background: "rgba(232,115,90,.1)", borderRadius: 18, padding: "12px", textAlign: "center" }}>
+            <div style={{ color: COLORS.primary, fontSize: 26, fontWeight: 900 }}>{data.length}</div>
+            <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>总情绪点</div>
+          </div>
+          <div style={{ background: "rgba(104,152,184,.12)", borderRadius: 18, padding: "12px", textAlign: "center" }}>
+            <div style={{ color: COLORS.blue, fontSize: 26, fontWeight: 900 }}>{totalDays}</div>
+            <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>有记录的日子</div>
+          </div>
+          <div style={{ background: `${recentMeta.color}18`, borderRadius: 18, padding: "12px", textAlign: "center" }}>
+            <div style={{ color: recentMeta.color, fontSize: 26, fontWeight: 900 }}>{sorted.length ? recentMeta.emoji : "—"}</div>
+            <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>最近情绪</div>
+          </div>
+        </div>
+      </Card>
+
+      {adding && (
+        <Card style={{ border: `2px solid ${COLORS.purple}` }}>
+          {Fields({ value: form, setValue: setForm })}
+          <FormActions onSave={save} onCancel={resetAddForm} saveText="保存情绪log 🌈" color={COLORS.purple} />
+        </Card>
+      )}
+
+      {sorted.length === 0 && !adding && <EmptyState emoji="🌈" text="还没有情绪log。先不用写长篇，选一个情绪，加一句话就够了。" />}
+
+      {Object.entries(groupedByDate).map(([date, entries]) => (
+        <div key={date}>
+          <div style={{ margin: "18px 0 10px", color: COLORS.purple, fontWeight: 900, fontSize: 16 }}>
+            {fmtDateWithYear(date)} · {entries.length} 条
+          </div>
+          {entries.map((entry) => <MoodCard key={entry.id} entry={entry} />)}
+        </div>
+      ))}
     </div>
   );
 }
@@ -4249,10 +4549,12 @@ export default function CoupleDiary() {
   const [readingBooks, setReadingBooks] = useLocalStorage<ReadingBookEntry[]>("couple-diary-reading-v1", []);
   const [gameEntries, setGameEntries] = useLocalStorage<GameEntry[]>("couple-diary-games-v1", []);
   const [successEntries, setSuccessEntries] = useLocalStorage<SuccessEntry[]>("couple-diary-success-v1", []);
+  const [moodLogEntries, setMoodLogEntries] = useLocalStorage<MoodLogEntry[]>("couple-diary-mood-log-v1", []);
 
   const renderTab = () => {
     switch (activeTab) {
       case "diary":    return <DiaryTab    data={diary}        setData={setDiary} />;
+      case "moodLog":  return <MoodLogTab data={moodLogEntries} setData={setMoodLogEntries} />;
       case "success":  return <SuccessDiaryTab data={successEntries} setData={setSuccessEntries} />;
       case "fiveYear": return <FiveYearDiaryTab data={fiveYearDiary} setData={setFiveYearDiary} diary={diary} setDiary={setDiary} successEntries={successEntries} photos={fiveYearPhotos} setPhotos={setFiveYearPhotos} />;
       case "reading":  return <ReadingTab  data={readingBooks} setData={setReadingBooks} />;
