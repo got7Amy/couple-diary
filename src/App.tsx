@@ -166,6 +166,16 @@ type ShoppingEntry = BaseItem & {
   bought: boolean;
 };
 
+type CheckinRewardType = "streak" | "total";
+
+type CheckinReward = BaseItem & {
+  title: string;
+  type: CheckinRewardType;
+  target: number;
+  claimed?: boolean;
+  claimedAt?: number;
+};
+
 type CheckinEntry = BaseItem & {
   name: string;
   lastCheckinDate?: string;
@@ -173,6 +183,7 @@ type CheckinEntry = BaseItem & {
   longestStreak: number;
   totalCheckins: number;
   history: string[];
+  rewards?: CheckinReward[];
 };
 
 type FiveYearPhoto = BaseItem & {
@@ -1688,19 +1699,146 @@ const displayCurrentStreak = (item: CheckinEntry) => {
   return 0;
 };
 
+const CHECKIN_REWARD_TYPES: {
+  value: CheckinRewardType;
+  label: string;
+  shortLabel: string;
+  unit: string;
+  color: string;
+  bg: string;
+}[] = [
+  { value: "streak", label: "连续打卡奖励", shortLabel: "连续", unit: "天", color: COLORS.green, bg: "#E8F5E8" },
+  { value: "total", label: "累计打卡奖励", shortLabel: "累计", unit: "次", color: COLORS.yellow, bg: "#FFF8DC" },
+];
+
+const getCheckinRewardMeta = (type: CheckinRewardType) =>
+  CHECKIN_REWARD_TYPES.find((item) => item.value === type) || CHECKIN_REWARD_TYPES[0];
+
+const parseRewardTarget = (value: string | number) => {
+  const target = Math.floor(Number(value));
+  return Number.isFinite(target) && target > 0 ? target : 0;
+};
+
+type CheckinRewardForm = {
+  title: string;
+  type: CheckinRewardType;
+  target: string;
+};
+
+const blankCheckinRewardForm = (): CheckinRewardForm => ({
+  title: "",
+  type: "streak",
+  target: "7",
+});
+
 function CheckinTab({ data, setData }: { data: CheckinEntry[]; setData: Setter<CheckinEntry[]> }) {
   const [name, setName] = useState("");
   const [adding, setAdding] = useState(false);
+  const [addingRewardFor, setAddingRewardFor] = useState<string | null>(null);
+  const [rewardForm, setRewardForm] = useState<CheckinRewardForm>(blankCheckinRewardForm());
+  const [editReward, setEditReward] = useState<{ projectId: string; rewardId: string } | null>(null);
+  const [editRewardForm, setEditRewardForm] = useState<CheckinRewardForm>(blankCheckinRewardForm());
 
   const addProject = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
     setData((prev) => [
-      { id: uid(), createdAt: now(), name: trimmed, currentStreak: 0, longestStreak: 0, totalCheckins: 0, history: [] },
+      { id: uid(), createdAt: now(), name: trimmed, currentStreak: 0, longestStreak: 0, totalCheckins: 0, history: [], rewards: [] },
       ...prev,
     ]);
     setName("");
     setAdding(false);
+  };
+
+  const getRewardProgress = (item: CheckinEntry, reward: CheckinReward) => {
+    const current = reward.type === "streak" ? displayCurrentStreak(item) : item.totalCheckins || 0;
+    const target = Math.max(1, Number(reward.target || 1));
+    return {
+      current,
+      target,
+      percent: Math.min(100, Math.round((current / target) * 100)),
+      reached: current >= target,
+    };
+  };
+
+  const saveReward = (projectId: string) => {
+    const title = rewardForm.title.trim();
+    const target = parseRewardTarget(rewardForm.target);
+    if (!title || !target) return;
+    setData((prev) =>
+      prev.map((item) =>
+        item.id === projectId
+          ? {
+              ...item,
+              rewards: [
+                { id: uid(), createdAt: now(), title, type: rewardForm.type, target, claimed: false },
+                ...(item.rewards || []),
+              ],
+              updatedAt: now(),
+            }
+          : item
+      )
+    );
+    setRewardForm(blankCheckinRewardForm());
+    setAddingRewardFor(null);
+  };
+
+  const saveRewardEdit = () => {
+    if (!editReward) return;
+    const title = editRewardForm.title.trim();
+    const target = parseRewardTarget(editRewardForm.target);
+    if (!title || !target) return;
+    setData((prev) =>
+      prev.map((item) =>
+        item.id === editReward.projectId
+          ? {
+              ...item,
+              rewards: (item.rewards || []).map((reward) =>
+                reward.id === editReward.rewardId
+                  ? { ...reward, title, type: editRewardForm.type, target, updatedAt: now() }
+                  : reward
+              ),
+              updatedAt: now(),
+            }
+          : item
+      )
+    );
+    setEditReward(null);
+  };
+
+  const deleteReward = (projectId: string, rewardId: string) => {
+    if (!confirmDelete()) return;
+    setData((prev) =>
+      prev.map((item) =>
+        item.id === projectId
+          ? { ...item, rewards: (item.rewards || []).filter((reward) => reward.id !== rewardId), updatedAt: now() }
+          : item
+      )
+    );
+    if (editReward?.rewardId === rewardId) setEditReward(null);
+  };
+
+  const toggleRewardClaimed = (projectId: string, rewardId: string) => {
+    setData((prev) =>
+      prev.map((item) =>
+        item.id === projectId
+          ? {
+              ...item,
+              rewards: (item.rewards || []).map((reward) =>
+                reward.id === rewardId
+                  ? {
+                      ...reward,
+                      claimed: !reward.claimed,
+                      claimedAt: !reward.claimed ? now() : undefined,
+                      updatedAt: now(),
+                    }
+                  : reward
+              ),
+              updatedAt: now(),
+            }
+          : item
+      )
+    );
   };
 
   const checkIn = (id: string) => {
@@ -1734,6 +1872,58 @@ function CheckinTab({ data, setData }: { data: CheckinEntry[]; setData: Setter<C
     setData((prev) => prev.filter((item) => item.id !== id));
   };
 
+  const RewardFields = ({
+    value,
+    setValue,
+  }: {
+    value: CheckinRewardForm;
+    setValue: Setter<CheckinRewardForm>;
+  }) => {
+    const meta = getCheckinRewardMeta(value.type);
+    return (
+      <>
+        <Input
+          value={value.title}
+          onChange={(v) => setValue((p) => ({ ...p, title: v }))}
+          placeholder="奖励内容，比如：买一杯奶茶、看一场电影、买一束花"
+          style={{ marginBottom: 10 }}
+        />
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 10 }}>
+          {CHECKIN_REWARD_TYPES.map((option) => (
+            <span
+              key={option.value}
+              onClick={() => setValue((p) => ({ ...p, type: option.value }))}
+              style={{
+                padding: "7px 13px",
+                borderRadius: 999,
+                background: value.type === option.value ? option.color : COLORS.light,
+                color: value.type === option.value ? "#fff" : COLORS.muted,
+                cursor: "pointer",
+                fontSize: 14,
+                fontWeight: 900,
+                transition: "background .15s",
+              }}
+            >
+              {option.label}
+            </span>
+          ))}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          <Input
+            type="number"
+            value={value.target}
+            onChange={(v) => setValue((p) => ({ ...p, target: v }))}
+            placeholder={`目标${meta.unit}数`}
+            style={{ width: 150 }}
+          />
+          <span style={{ color: COLORS.muted, fontSize: 14, fontWeight: 700 }}>
+            达到 {parseRewardTarget(value.target) || "?"}{meta.unit} 解锁
+          </span>
+        </div>
+      </>
+    );
+  };
+
   const sorted = [...data].sort((a, b) => b.createdAt - a.createdAt);
 
   return (
@@ -1760,6 +1950,15 @@ function CheckinTab({ data, setData }: { data: CheckinEntry[]; setData: Setter<C
       {sorted.map((item) => {
         const current = displayCurrentStreak(item);
         const checkedToday = item.lastCheckinDate === today();
+        const rewards = [...(item.rewards || [])].sort((a, b) => {
+          const aProgress = getRewardProgress(item, a);
+          const bProgress = getRewardProgress(item, b);
+          if (Number(a.claimed) !== Number(b.claimed)) return Number(a.claimed) - Number(b.claimed);
+          if (Number(aProgress.reached) !== Number(bProgress.reached)) return Number(bProgress.reached) - Number(aProgress.reached);
+          return a.target - b.target || b.createdAt - a.createdAt;
+        });
+        const reachedCount = rewards.filter((reward) => getRewardProgress(item, reward).reached).length;
+        const claimedCount = rewards.filter((reward) => reward.claimed).length;
 
         return (
           <Card key={item.id} style={{ borderLeft: `4px solid ${COLORS.green}` }}>
@@ -1788,7 +1987,7 @@ function CheckinTab({ data, setData }: { data: CheckinEntry[]; setData: Setter<C
               </div>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
               <Btn
                 onClick={() => checkIn(item.id)}
                 color={checkedToday ? COLORS.muted : COLORS.green}
@@ -1797,9 +1996,121 @@ function CheckinTab({ data, setData }: { data: CheckinEntry[]; setData: Setter<C
               >
                 {checkedToday ? "今天已完成 ✓" : "打卡 ✅"}
               </Btn>
-              <Btn small outline color={COLORS.danger} onClick={() => deleteProject(item.id)}>
-                删除项目
-              </Btn>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Btn
+                  small
+                  outline
+                  color={COLORS.yellow}
+                  onClick={() => {
+                    setAddingRewardFor(addingRewardFor === item.id ? null : item.id);
+                    setRewardForm(blankCheckinRewardForm());
+                    setEditReward(null);
+                  }}
+                  style={{ color: COLORS.text }}
+                >
+                  {addingRewardFor === item.id ? "取消奖励" : "+ 添加奖励"}
+                </Btn>
+                <Btn small outline color={COLORS.danger} onClick={() => deleteProject(item.id)}>
+                  删除项目
+                </Btn>
+              </div>
+            </div>
+
+            {addingRewardFor === item.id && (
+              <div style={{ background: "rgba(255,248,244,.85)", border: `1.5px dashed ${COLORS.yellow}`, borderRadius: 18, padding: "14px 14px", marginBottom: 14 }}>
+                <div style={{ fontWeight: 900, color: COLORS.text, marginBottom: 10 }}>添加奖励 🎁</div>
+                <RewardFields value={rewardForm} setValue={setRewardForm} />
+                <FormActions onSave={() => saveReward(item.id)} onCancel={() => setAddingRewardFor(null)} saveText="保存奖励" color={COLORS.yellow} />
+              </div>
+            )}
+
+            <div style={{ borderTop: `1px solid ${COLORS.light}`, paddingTop: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                <div style={{ fontWeight: 900, color: COLORS.text, display: "flex", alignItems: "center", gap: 7 }}>
+                  <span>🎁</span>
+                  奖励追踪
+                </div>
+                <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 700 }}>
+                  {rewards.length > 0 ? `${claimedCount}/${rewards.length} 已领取 · ${reachedCount} 个已达成` : "还没有奖励"}
+                </div>
+              </div>
+
+              {rewards.length === 0 ? (
+                <div style={{ color: COLORS.muted, fontSize: 14, lineHeight: 1.7, background: COLORS.light, borderRadius: 14, padding: "10px 12px" }}>
+                  给这个目标设一个小奖励，会更容易坚持。比如连续 7 天早睡奖励一杯奶茶，累计 30 次运动奖励一件新装备。
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {rewards.map((reward) => {
+                    const meta = getCheckinRewardMeta(reward.type);
+                    const progress = getRewardProgress(item, reward);
+                    const editingThisReward = editReward?.projectId === item.id && editReward.rewardId === reward.id;
+
+                    return (
+                      <div key={reward.id} style={{ background: reward.claimed ? "rgba(232,245,232,.72)" : "rgba(255,255,255,.9)", border: `1px solid ${progress.reached ? "rgba(104,174,126,.28)" : "rgba(240,190,170,.32)"}`, borderRadius: 16, padding: "12px 12px" }}>
+                        {editingThisReward ? (
+                          <>
+                            <RewardFields value={editRewardForm} setValue={setEditRewardForm} />
+                            <FormActions onSave={saveRewardEdit} onCancel={() => setEditReward(null)} saveText="保存修改" color={COLORS.yellow} />
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 8 }}>
+                              <div style={{ minWidth: 0, flex: "1 1 160px" }}>
+                                <div style={{ fontWeight: 900, color: COLORS.text, fontSize: 16, wordBreak: "break-word" }}>{reward.title}</div>
+                                <div style={{ color: COLORS.muted, fontSize: 13, marginTop: 3 }}>
+                                  当前 {progress.current}/{progress.target}{meta.unit}
+                                </div>
+                              </div>
+                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                <Tag color={meta.bg} textColor={meta.color}>{meta.shortLabel}</Tag>
+                                <Tag color={reward.claimed ? "#E8F5E8" : progress.reached ? "#FFF8DC" : COLORS.light} textColor={reward.claimed ? COLORS.green : progress.reached ? COLORS.yellow : COLORS.muted}>
+                                  {reward.claimed ? "已领取" : progress.reached ? "已达成" : "进行中"}
+                                </Tag>
+                              </div>
+                            </div>
+
+                            <div style={{ height: 9, background: COLORS.light, borderRadius: 999, overflow: "hidden", marginBottom: 10 }}>
+                              <div style={{ height: "100%", width: `${progress.percent}%`, background: progress.reached ? BTN_GRADIENTS[COLORS.green] : BTN_GRADIENTS[meta.color] || meta.color, borderRadius: 999, transition: "width .25s ease" }} />
+                            </div>
+
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 700 }}>
+                                {progress.reached ? "可以兑现奖励啦" : `还差 ${Math.max(0, progress.target - progress.current)}${meta.unit}`}
+                              </div>
+                              <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                                {progress.reached && (
+                                  <Btn small outline color={reward.claimed ? COLORS.muted : COLORS.green} onClick={() => toggleRewardClaimed(item.id, reward.id)}>
+                                    {reward.claimed ? "取消领取" : "标记已领取"}
+                                  </Btn>
+                                )}
+                                <MiniIconButton
+                                  label="编辑奖励"
+                                  color={COLORS.blue}
+                                  onClick={() => {
+                                    setEditReward({ projectId: item.id, rewardId: reward.id });
+                                    setEditRewardForm({ title: reward.title, type: reward.type, target: String(reward.target || "") });
+                                    setAddingRewardFor(null);
+                                  }}
+                                >
+                                  /
+                                </MiniIconButton>
+                                <MiniIconButton
+                                  label="删除奖励"
+                                  color={COLORS.danger}
+                                  onClick={() => deleteReward(item.id, reward.id)}
+                                >
+                                  -
+                                </MiniIconButton>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </Card>
         );
@@ -2390,7 +2701,6 @@ function FiveYearDiaryTab({
               <div style={{ background: "rgba(243,238,255,.65)", borderRadius: 18, padding: "14px", marginBottom: 12, border: `1.5px solid rgba(164,143,192,.25)` }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
                   <Tag color="#F3EEFF">新增记录</Tag>
-                  <span style={{ color: COLORS.muted, fontSize: 13 }}>只保存在五年日记，不会出现在心情日记列表里。</span>
                 </div>
                 {FiveYearFields({ value: form, setValue: setForm })}
                 <FormActions
