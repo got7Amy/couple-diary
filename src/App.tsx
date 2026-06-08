@@ -36,6 +36,7 @@ const BTN_GRADIENTS: Record<string, string> = {
 type TabId =
   | "diary"
   | "fiveYear"
+  | "reading"
   | "checkin"
   | "schedule"
   | "shopping"
@@ -48,6 +49,7 @@ type TabId =
 const TABS: { id: TabId; icon: string; label: string }[] = [
   { id: "diary",    icon: "📖", label: "心情日记" },
   { id: "fiveYear", icon: "📚", label: "五年日记" },
+  { id: "reading",  icon: "📕", label: "读书" },
   { id: "checkin",  icon: "✅", label: "打卡" },
   { id: "schedule", icon: "🗓", label: "本周计划" },
   { id: "shopping", icon: "🛒", label: "购物清单" },
@@ -193,6 +195,25 @@ type FiveYearPhoto = BaseItem & {
 };
 
 type FiveYearPhotosData = Record<string, FiveYearPhoto[]>;
+
+type ReadingBookStatus = "reading" | "want" | "done";
+
+type ReadingProgressEntry = BaseItem & {
+  date: string;
+  progress: string;
+  note: string;
+};
+
+type ReadingBookEntry = BaseItem & {
+  title: string;
+  author: string;
+  note: string;
+  status: ReadingBookStatus;
+  startDate: string;
+  finishDate: string;
+  progress: string;
+  history?: ReadingProgressEntry[];
+};
 
 // ─── localStorage hook (unchanged) ───────────────────────────────────────────
 function useLocalStorage<T>(key: string, initialValue: T) {
@@ -2701,6 +2722,7 @@ function FiveYearDiaryTab({
               <div style={{ background: "rgba(243,238,255,.65)", borderRadius: 18, padding: "14px", marginBottom: 12, border: `1.5px solid rgba(164,143,192,.25)` }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
                   <Tag color="#F3EEFF">新增记录</Tag>
+                  <span style={{ color: COLORS.muted, fontSize: 13 }}>只保存在五年日记，不会出现在心情日记列表里。</span>
                 </div>
                 {FiveYearFields({ value: form, setValue: setForm })}
                 <FormActions
@@ -2750,6 +2772,541 @@ function FiveYearDiaryTab({
   );
 }
 
+// ─── Reading Tracker ─────────────────────────────────────────────────────────
+const READING_STATUS_META: Record<ReadingBookStatus, { title: string; emoji: string; empty: string; color: string }> = {
+  reading: {
+    title: "正在读的书",
+    emoji: "📖",
+    empty: "还没有正在读的书。把正在追的书放这里，每天轻轻打个卡。",
+    color: COLORS.green,
+  },
+  want: {
+    title: "想要读的书",
+    emoji: "🌱",
+    empty: "还没有想读的书。看到心动书名就先扔进来，别靠脑子硬记。",
+    color: COLORS.blue,
+  },
+  done: {
+    title: "已读完的书",
+    emoji: "🏁",
+    empty: "还没有读完的书。以后这里会变成你的年度阅读战绩墙。",
+    color: COLORS.purple,
+  },
+};
+
+const READING_STATUS_ORDER: ReadingBookStatus[] = ["reading", "want", "done"];
+const MONTH_LABELS = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
+
+const normalizeReadingStatus = (status?: string): ReadingBookStatus =>
+  status === "want" || status === "done" || status === "reading" ? status : "reading";
+
+const sortReadingBooks = (books: ReadingBookEntry[], status: ReadingBookStatus) =>
+  [...books].sort((a, b) => {
+    if (status === "done") {
+      return (b.finishDate || "").localeCompare(a.finishDate || "") || b.createdAt - a.createdAt;
+    }
+    return (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt);
+  });
+
+const getReadingYear = (book: ReadingBookEntry) =>
+  String(toLocalDate(book.finishDate || today()).getFullYear());
+
+const getReadingMonth = (book: ReadingBookEntry) =>
+  String(toLocalDate(book.finishDate || today()).getMonth());
+
+function ReadingTab({ data, setData }: { data: ReadingBookEntry[]; setData: Setter<ReadingBookEntry[]> }) {
+  const blank = {
+    title: "",
+    author: "",
+    note: "",
+    status: "reading" as ReadingBookStatus,
+    startDate: today(),
+    finishDate: "",
+    progress: "",
+  };
+
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState(blank);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState(blank);
+  const [collapsed, setCollapsed] = useState<Record<ReadingBookStatus, boolean>>({
+    reading: false,
+    want: false,
+    done: false,
+  });
+  const [trackingBookId, setTrackingBookId] = useState<string | null>(null);
+  const [trackForm, setTrackForm] = useState({ date: today(), progress: "", note: "" });
+
+  const cleanedData = data.map((book) => ({
+    ...book,
+    status: normalizeReadingStatus(book.status),
+    history: book.history || [],
+  }));
+
+  const groupedByStatus = READING_STATUS_ORDER.reduce<Record<ReadingBookStatus, ReadingBookEntry[]>>((acc, status) => {
+    acc[status] = sortReadingBooks(cleanedData.filter((book) => normalizeReadingStatus(book.status) === status), status);
+    return acc;
+  }, { reading: [], want: [], done: [] });
+
+  const yearlyDoneCounts = groupedByStatus.done.reduce<Record<string, number>>((acc, book) => {
+    const year = getReadingYear(book);
+    acc[year] = (acc[year] || 0) + 1;
+    return acc;
+  }, {});
+
+  const doneByYearMonth = groupedByStatus.done.reduce<Record<string, Record<string, ReadingBookEntry[]>>>((acc, book) => {
+    const year = getReadingYear(book);
+    const month = getReadingMonth(book);
+    if (!acc[year]) acc[year] = {};
+    if (!acc[year][month]) acc[year][month] = [];
+    acc[year][month].push(book);
+    return acc;
+  }, {});
+
+  const resetAddForm = () => {
+    setForm(blank);
+    setAdding(false);
+  };
+
+  const save = () => {
+    const title = form.title.trim();
+    if (!title) return;
+    const status = normalizeReadingStatus(form.status);
+    setData((prev) => [
+      {
+        id: uid(),
+        createdAt: now(),
+        ...form,
+        title,
+        author: form.author.trim(),
+        note: form.note.trim(),
+        progress: form.progress.trim(),
+        status,
+        startDate: form.startDate || today(),
+        finishDate: status === "done" ? form.finishDate || today() : form.finishDate,
+        history: [],
+      },
+      ...prev,
+    ]);
+    resetAddForm();
+  };
+
+  const saveEdit = () => {
+    const title = editForm.title.trim();
+    if (!editId || !title) return;
+    const status = normalizeReadingStatus(editForm.status);
+    setData((prev) =>
+      prev.map((book) =>
+        book.id === editId
+          ? {
+              ...book,
+              ...editForm,
+              title,
+              author: editForm.author.trim(),
+              note: editForm.note.trim(),
+              progress: editForm.progress.trim(),
+              status,
+              startDate: editForm.startDate || book.startDate || today(),
+              finishDate: status === "done" ? editForm.finishDate || today() : editForm.finishDate,
+              history: book.history || [],
+              updatedAt: now(),
+            }
+          : book
+      )
+    );
+    setEditId(null);
+  };
+
+  const deleteBook = (id: string) => {
+    if (!confirmDelete()) return;
+    setData((prev) => prev.filter((book) => book.id !== id));
+  };
+
+  const markAsDone = (book: ReadingBookEntry) => {
+    setData((prev) =>
+      prev.map((item) =>
+        item.id === book.id
+          ? { ...item, status: "done", finishDate: today(), updatedAt: now() }
+          : item
+      )
+    );
+  };
+
+  const moveToReading = (book: ReadingBookEntry) => {
+    setData((prev) =>
+      prev.map((item) =>
+        item.id === book.id
+          ? { ...item, status: "reading", startDate: item.startDate || today(), updatedAt: now() }
+          : item
+      )
+    );
+  };
+
+  const saveTrack = (book: ReadingBookEntry) => {
+    const progress = trackForm.progress.trim();
+    const note = trackForm.note.trim();
+    if (!progress && !note) return;
+    const entry: ReadingProgressEntry = {
+      id: uid(),
+      createdAt: now(),
+      date: trackForm.date || today(),
+      progress,
+      note,
+    };
+    setData((prev) =>
+      prev.map((item) =>
+        item.id === book.id
+          ? {
+              ...item,
+              progress: progress || item.progress,
+              history: [entry, ...(item.history || [])],
+              updatedAt: now(),
+            }
+          : item
+      )
+    );
+    setTrackForm({ date: today(), progress: "", note: "" });
+    setTrackingBookId(null);
+  };
+
+  const deleteTrack = (bookId: string, trackId: string) => {
+    if (!confirmDelete()) return;
+    setData((prev) =>
+      prev.map((book) =>
+        book.id === bookId
+          ? { ...book, history: (book.history || []).filter((item) => item.id !== trackId), updatedAt: now() }
+          : book
+      )
+    );
+  };
+
+  const Fields = ({ value, setValue }: { value: typeof blank; setValue: Setter<typeof blank> }) => {
+    const status = normalizeReadingStatus(value.status);
+    return (
+      <>
+        <div style={{ display: "flex", gap: 7, marginBottom: 12, flexWrap: "wrap" }}>
+          {READING_STATUS_ORDER.map((s) => (
+            <span
+              key={s}
+              onClick={() => setValue((p) => ({ ...p, status: s }))}
+              style={{
+                padding: "7px 13px",
+                borderRadius: 999,
+                background: status === s ? READING_STATUS_META[s].color : COLORS.light,
+                color: status === s ? "#fff" : COLORS.muted,
+                cursor: "pointer",
+                fontSize: 14,
+                fontWeight: 900,
+                transition: "background .15s",
+              }}
+            >
+              {READING_STATUS_META[s].emoji} {READING_STATUS_META[s].title}
+            </span>
+          ))}
+        </div>
+
+        <Input
+          value={value.title}
+          onChange={(v) => setValue((p) => ({ ...p, title: v }))}
+          placeholder="书名"
+          style={{ marginBottom: 10 }}
+        />
+        <Input
+          value={value.author}
+          onChange={(v) => setValue((p) => ({ ...p, author: v }))}
+          placeholder="作者（可选）"
+          style={{ marginBottom: 10 }}
+        />
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          {status !== "want" && (
+            <Input
+              type="date"
+              value={status === "done" ? value.finishDate : value.startDate}
+              onChange={(v) =>
+                setValue((p) =>
+                  status === "done" ? { ...p, finishDate: v } : { ...p, startDate: v }
+                )
+              }
+              style={{ width: 180 }}
+            />
+          )}
+          {status === "reading" && (
+            <Input
+              value={value.progress}
+              onChange={(v) => setValue((p) => ({ ...p, progress: v }))}
+              placeholder="当前进度，如 第35页 / 20%"
+              style={{ flex: "1 1 220px" }}
+            />
+          )}
+        </div>
+
+        <Input
+          value={value.note}
+          onChange={(v) => setValue((p) => ({ ...p, note: v }))}
+          placeholder="备注/为什么想读/读后感一句话（可选）"
+          multiline
+          rows={3}
+          style={{ marginBottom: 12 }}
+        />
+      </>
+    );
+  };
+
+  const SectionHeader = ({ status, count }: { status: ReadingBookStatus; count: number }) => {
+    const meta = READING_STATUS_META[status];
+    return (
+      <button
+        type="button"
+        onClick={() => setCollapsed((prev) => ({ ...prev, [status]: !prev[status] }))}
+        style={{
+          width: "100%",
+          border: "none",
+          background: "transparent",
+          padding: 0,
+          margin: "18px 0 10px",
+          cursor: "pointer",
+          fontFamily: "inherit",
+          textAlign: "left",
+        }}
+      >
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          background: "rgba(255,255,255,.72)",
+          border: `1.5px solid ${meta.color}33`,
+          borderRadius: 18,
+          padding: "12px 14px",
+          boxShadow: "0 2px 12px rgba(61,34,24,.05)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+            <span style={{ fontSize: 22 }}>{meta.emoji}</span>
+            <strong style={{ color: COLORS.text, fontSize: 17, fontWeight: 900 }}>{meta.title}</strong>
+            <Tag color={COLORS.light} textColor={meta.color}>{count}本</Tag>
+          </div>
+          <span style={{ color: meta.color, fontSize: 18, fontWeight: 900 }}>
+            {collapsed[status] ? "⌄" : "⌃"}
+          </span>
+        </div>
+      </button>
+    );
+  };
+
+  const BookCard = ({ book }: { book: ReadingBookEntry }) => {
+    const status = normalizeReadingStatus(book.status);
+    const meta = READING_STATUS_META[status];
+    const history = [...(book.history || [])].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+
+    return (
+      <Card style={{ borderLeft: `4px solid ${meta.color}` }}>
+        {editId === book.id ? (
+          <>
+            {Fields({ value: editForm, setValue: setEditForm })}
+            <FormActions onSave={saveEdit} onCancel={() => setEditId(null)} saveText="保存修改" color={meta.color} />
+          </>
+        ) : (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+              <div style={{ minWidth: 0, flex: "1 1 220px" }}>
+                <div style={{ color: COLORS.text, fontSize: 18, fontWeight: 900, lineHeight: 1.45, wordBreak: "break-word" }}>
+                  {book.title}
+                </div>
+                {book.author && <div style={{ color: COLORS.muted, fontSize: 14, marginTop: 3 }}>作者：{book.author}</div>}
+              </div>
+              <Tag color={status === "reading" ? "#E8F5E8" : status === "want" ? "#E0F0FF" : "#F3EEFF"} textColor={meta.color}>
+                {meta.title}
+              </Tag>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+              {status === "reading" && book.startDate && <Tag color="#E8F5E8" textColor={COLORS.green}>开始：{fmtDateWithYear(book.startDate)}</Tag>}
+              {status === "reading" && book.progress && <Tag color={COLORS.soft}>进度：{book.progress}</Tag>}
+              {status === "done" && book.finishDate && <Tag color="#F3EEFF" textColor={COLORS.purple}>读完：{fmtDateWithYear(book.finishDate)}</Tag>}
+            </div>
+
+            {book.note && (
+              <p style={{ margin: "12px 0 0", color: COLORS.muted, fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                {book.note}
+              </p>
+            )}
+
+            {status === "reading" && (
+              <div style={{ marginTop: 14, background: "rgba(232,245,232,.5)", borderRadius: 16, padding: "12px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: trackingBookId === book.id ? 10 : 0 }}>
+                  <strong style={{ color: COLORS.green, fontSize: 15 }}>每日阅读追踪</strong>
+                  <Btn
+                    small
+                    outline
+                    color={COLORS.green}
+                    onClick={() => {
+                      setTrackingBookId(trackingBookId === book.id ? null : book.id);
+                      setTrackForm({ date: today(), progress: book.progress || "", note: "" });
+                    }}
+                  >
+                    {trackingBookId === book.id ? "收起" : "+ 记今日"}
+                  </Btn>
+                </div>
+
+                {trackingBookId === book.id && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                      <Input
+                        type="date"
+                        value={trackForm.date}
+                        onChange={(v) => setTrackForm((p) => ({ ...p, date: v }))}
+                        style={{ width: 170 }}
+                      />
+                      <Input
+                        value={trackForm.progress}
+                        onChange={(v) => setTrackForm((p) => ({ ...p, progress: v }))}
+                        placeholder="今天读到哪了"
+                        style={{ flex: "1 1 180px" }}
+                      />
+                    </div>
+                    <Input
+                      value={trackForm.note}
+                      onChange={(v) => setTrackForm((p) => ({ ...p, note: v }))}
+                      placeholder="今天读书感受/摘一句话（可选）"
+                      multiline
+                      rows={2}
+                      style={{ marginBottom: 10 }}
+                    />
+                    <FormActions onSave={() => saveTrack(book)} onCancel={() => setTrackingBookId(null)} saveText="保存今日阅读" color={COLORS.green} />
+                  </div>
+                )}
+
+                {history.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    {history.slice(0, 5).map((item) => (
+                      <div key={item.id} style={{ background: "rgba(255,255,255,.75)", borderRadius: 12, padding: "8px 10px", marginBottom: 7 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
+                          <div style={{ color: COLORS.text, fontSize: 14, lineHeight: 1.7, minWidth: 0, flex: 1 }}>
+                            <strong>{fmtDate(item.date)}</strong>
+                            {item.progress && <span> · {item.progress}</span>}
+                            {item.note && <div style={{ color: COLORS.muted, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{item.note}</div>}
+                          </div>
+                          <Btn small outline color={COLORS.danger} onClick={() => deleteTrack(book.id, item.id)}>删</Btn>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {status !== "done" && <Btn small color={COLORS.purple} onClick={() => markAsDone(book)}>标记读完</Btn>}
+                {status === "want" && <Btn small outline color={COLORS.green} onClick={() => moveToReading(book)}>开始读</Btn>}
+                {status === "done" && <Btn small outline color={COLORS.green} onClick={() => moveToReading(book)}>重新开始读</Btn>}
+              </div>
+              <ActionButtons
+                onEdit={() => {
+                  setEditId(book.id);
+                  setEditForm({
+                    title: book.title,
+                    author: book.author || "",
+                    note: book.note || "",
+                    status,
+                    startDate: book.startDate || today(),
+                    finishDate: book.finishDate || "",
+                    progress: book.progress || "",
+                  });
+                }}
+                onDelete={() => deleteBook(book.id)}
+              />
+            </div>
+          </>
+        )}
+      </Card>
+    );
+  };
+
+  const DoneSection = () => {
+    const years = Object.keys(doneByYearMonth).sort((a, b) => Number(b) - Number(a));
+    if (years.length === 0) return <EmptyState emoji={READING_STATUS_META.done.emoji} text={READING_STATUS_META.done.empty} />;
+
+    return (
+      <div>
+        {years.map((year) => {
+          const months = Object.keys(doneByYearMonth[year]).sort((a, b) => Number(b) - Number(a));
+          return (
+            <div key={year}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                margin: "10px 0 12px",
+                color: COLORS.purple,
+                fontSize: 18,
+                fontWeight: 900,
+              }}>
+                <span style={{ height: 1, flex: 1, background: "rgba(164,143,192,.28)" }} />
+                <span>{year} 年 · 读完 {yearlyDoneCounts[year]} 本</span>
+                <span style={{ height: 1, flex: 1, background: "rgba(164,143,192,.28)" }} />
+              </div>
+
+              {months.map((month) => (
+                <div key={`${year}-${month}`}>
+                  <div style={{ fontWeight: 900, color: COLORS.muted, fontSize: 15, margin: "8px 0" }}>
+                    {MONTH_LABELS[Number(month)]} · {doneByYearMonth[year][month].length} 本
+                  </div>
+                  {doneByYearMonth[year][month].map((book) => <BookCard key={book.id} book={book} />)}
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
+        <div>
+          <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.green, flexShrink: 0 }} />
+            读书记录 📕
+          </h2>
+          <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6, paddingLeft: 12 }}>
+            正在读、想读、已读完分开收纳；已读完会自动按年月归档。
+          </div>
+        </div>
+        <Btn onClick={() => setAdding(!adding)} small color={COLORS.green}>
+          {adding ? "取消" : "+ 加一本书"}
+        </Btn>
+      </div>
+
+      {adding && (
+        <Card style={{ border: `2px solid ${COLORS.green}` }}>
+          {Fields({ value: form, setValue: setForm })}
+          <FormActions onSave={save} onCancel={resetAddForm} saveText="保存这本书" color={COLORS.green} />
+        </Card>
+      )}
+
+      {READING_STATUS_ORDER.map((status) => (
+        <div key={status}>
+          <SectionHeader status={status} count={groupedByStatus[status].length} />
+          {!collapsed[status] && (
+            <div>
+              {status === "done" ? (
+                <DoneSection />
+              ) : groupedByStatus[status].length === 0 ? (
+                <EmptyState emoji={READING_STATUS_META[status].emoji} text={READING_STATUS_META[status].empty} />
+              ) : (
+                groupedByStatus[status].map((book) => <BookCard key={book.id} book={book} />)
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── App Shell ────────────────────────────────────────────────────────────────
 export default function CoupleDiary() {
   const [activeTab, setActiveTab] = useState<TabId>("diary");
@@ -2766,11 +3323,13 @@ export default function CoupleDiary() {
   const [reminders, setReminders] = useLocalStorage<ReminderEntry[]>("couple-diary-reminders-v2", []);
   const [fiveYearDiary, setFiveYearDiary] = useLocalStorage<FiveYearDiaryData>("couple-diary-five-year-v1", {});
   const [fiveYearPhotos, setFiveYearPhotos] = useLocalStorage<FiveYearPhotosData>("couple-diary-fiveyear-photos-v1", {});
+  const [readingBooks, setReadingBooks] = useLocalStorage<ReadingBookEntry[]>("couple-diary-reading-v1", []);
 
   const renderTab = () => {
     switch (activeTab) {
       case "diary":    return <DiaryTab    data={diary}        setData={setDiary} />;
       case "fiveYear": return <FiveYearDiaryTab data={fiveYearDiary} setData={setFiveYearDiary} diary={diary} setDiary={setDiary} photos={fiveYearPhotos} setPhotos={setFiveYearPhotos} />;
+      case "reading":  return <ReadingTab  data={readingBooks} setData={setReadingBooks} />;
       case "checkin":  return <CheckinTab  data={checkins}     setData={setCheckins} />;
       case "schedule": return <ScheduleTab data={schedule}     setData={setSchedule} />;
       case "shopping": return <ShoppingTab data={shopping}     setData={setShopping} />;
