@@ -47,13 +47,15 @@ type TabId =
   | "whisper"
   | "jokes"
   | "calendar"
-  | "wishes";
+  | "wishes"
+  | "backup";
 
 const TABS: { id: TabId; icon: string; label: string }[] = [
   { id: "diary",    icon: "🌸", label: "心情花笺" },
   { id: "moodLog",  icon: "🌦️", label: "情绪天气" },
   { id: "success",  icon: "🌱", label: "小成功" },
   { id: "fiveYear", icon: "🌳", label: "五年花历" },
+  { id: "backup",   icon: "🛟", label: "备份保险箱" },
   { id: "reading",  icon: "📚", label: "阅读花架" },
   { id: "games",    icon: "🎮", label: "游戏角落" },
   { id: "crochet",  icon: "🧶", label: "钩织花篮" },
@@ -280,6 +282,206 @@ type CrochetProjectEntry = BaseItem & {
 };
 
 type CrochetProjectForm = Omit<CrochetProjectEntry, keyof BaseItem>;
+
+// ─── Backup helpers ───────────────────────────────────────────────────────────
+type BackupStorageItem = {
+  key: string;
+  label: string;
+};
+
+type BackupMeta = {
+  lastBackupAt?: string;
+  lastAutoBackupAt?: string;
+  lastExportAt?: string;
+  lastImportAt?: string;
+  lastBackupType?: "auto" | "export" | "import" | "manual-local";
+  lastImportedFileName?: string;
+  lastBackupError?: string;
+};
+
+type BackupPayload = {
+  schema: string;
+  app: string;
+  version: number;
+  exportedAt: string;
+  storage: Record<string, unknown>;
+};
+
+const BACKUP_SCHEMA = "xinshi-garden-backup-v1";
+const BACKUP_META_KEY = "couple-diary-backup-meta-v1";
+const BACKUP_SNAPSHOT_KEY = "couple-diary-auto-backup-v1";
+
+const BACKUP_STORAGE_ITEMS: BackupStorageItem[] = [
+  { key: "couple-diary-diary-v2", label: "心情花笺" },
+  { key: "couple-diary-mood-log-v1", label: "情绪天气" },
+  { key: "couple-diary-success-v1", label: "小成功" },
+  { key: "couple-diary-five-year-v1", label: "五年花历" },
+  { key: "couple-diary-fiveyear-photos-v1", label: "五年花历照片" },
+  { key: "couple-diary-reading-v1", label: "阅读花架" },
+  { key: "couple-diary-games-v1", label: "游戏角落" },
+  { key: "couple-diary-crochet-v1", label: "钩织花篮" },
+  { key: "couple-diary-checkins-v1", label: "打卡浇水" },
+  { key: "couple-diary-schedule-v2", label: "本周花径" },
+  { key: "couple-diary-shopping-v1", label: "采购花篮" },
+  { key: "couple-diary-whispers-v2", label: "秘密花语" },
+  { key: "couple-diary-jokes-v2", label: "笑声花丛" },
+  { key: "couple-diary-calendar-v2", label: "花园日历" },
+  { key: "couple-diary-wishes-v2", label: "愿望种子" },
+];
+
+const backupEvent = () => {
+  try {
+    window.dispatchEvent(new Event("xinshi-garden-backup-updated"));
+  } catch {
+    // noop
+  }
+};
+
+const safeJsonParse = <T,>(raw: string | null, fallback: T): T => {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const readBackupMeta = (): BackupMeta => safeJsonParse<BackupMeta>(localStorage.getItem(BACKUP_META_KEY), {});
+
+const writeBackupMeta = (patch: Partial<BackupMeta>) => {
+  const next: BackupMeta = { ...readBackupMeta(), ...patch };
+  try {
+    localStorage.setItem(BACKUP_META_KEY, JSON.stringify(next));
+    backupEvent();
+  } catch {
+    // localStorage may be full; avoid crashing the app.
+  }
+  return next;
+};
+
+const readStorageValue = (key: string) => {
+  const raw = localStorage.getItem(key);
+  if (raw === null) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+};
+
+const buildBackupPayload = (): BackupPayload => {
+  const storage = BACKUP_STORAGE_ITEMS.reduce<Record<string, unknown>>((acc, item) => {
+    acc[item.key] = readStorageValue(item.key);
+    return acc;
+  }, {});
+
+  return {
+    schema: BACKUP_SCHEMA,
+    app: "心事花园",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    storage,
+  };
+};
+
+const formatBackupDateTime = (value?: string) => {
+  if (!value) return "还没有备份";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const backupFileName = () => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `xinshi-garden-backup-${yyyy}${mm}${dd}-${hh}${min}.json`;
+};
+
+const downloadBackupPayload = (payload: BackupPayload) => {
+  const text = JSON.stringify(payload, null, 2);
+  const blob = new Blob([text], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = backupFileName();
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 800);
+  return blob.size;
+};
+
+const bytesToSize = (bytes: number) => {
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+};
+
+const countBackupItems = (value: unknown): number => {
+  if (!value) return 0;
+  if (Array.isArray(value)) return value.length;
+  if (typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).reduce((sum, item) => {
+      if (Array.isArray(item)) return sum + item.length;
+      if (item && typeof item === "object") return sum + 1;
+      return sum;
+    }, 0);
+  }
+  return 1;
+};
+
+const getBackupStorageStats = () => {
+  const payload = buildBackupPayload();
+  const rows = BACKUP_STORAGE_ITEMS.map((item) => ({
+    ...item,
+    count: countBackupItems(payload.storage[item.key]),
+  }));
+  const total = rows.reduce((sum, item) => sum + item.count, 0);
+  const size = new Blob([JSON.stringify(payload)]).size;
+  return { rows, total, size };
+};
+
+const extractBackupStorage = (parsed: any): Record<string, unknown> | null => {
+  if (parsed?.schema === BACKUP_SCHEMA && parsed.storage && typeof parsed.storage === "object") {
+    return parsed.storage;
+  }
+
+  // Tolerate older/handmade files that wrap data differently.
+  if (parsed?.storage && typeof parsed.storage === "object") return parsed.storage;
+  if (parsed?.data && typeof parsed.data === "object") return parsed.data;
+
+  // Tolerate a raw object containing couple-diary-* keys.
+  if (parsed && typeof parsed === "object" && Object.keys(parsed).some((key) => key.startsWith("couple-diary-"))) {
+    return parsed as Record<string, unknown>;
+  }
+
+  return null;
+};
+
+const saveLocalBackupSnapshot = (type: BackupMeta["lastBackupType"] = "auto") => {
+  const payload = buildBackupPayload();
+  localStorage.setItem(BACKUP_SNAPSHOT_KEY, JSON.stringify(payload));
+  const iso = new Date().toISOString();
+  writeBackupMeta({
+    lastBackupAt: iso,
+    lastAutoBackupAt: type === "auto" ? iso : readBackupMeta().lastAutoBackupAt,
+    lastBackupType: type,
+    lastBackupError: "",
+  });
+  return payload;
+};
 
 // ─── localStorage hook (unchanged) ───────────────────────────────────────────
 function useLocalStorage<T>(key: string, initialValue: T) {
@@ -4738,6 +4940,261 @@ function GameTrackerTab({ data, setData }: { data: GameEntry[]; setData: Setter<
 }
 
 
+
+// ─── Backup ──────────────────────────────────────────────────────────────────
+function BackupTab() {
+  const [meta, setMeta] = useState<BackupMeta>(() => readBackupMeta());
+  const [stats, setStats] = useState(() => getBackupStorageStats());
+  const [message, setMessage] = useState("");
+
+  const refresh = () => {
+    setMeta(readBackupMeta());
+    setStats(getBackupStorageStats());
+  };
+
+  useEffect(() => {
+    refresh();
+    const onUpdate = () => refresh();
+    window.addEventListener("xinshi-garden-backup-updated", onUpdate);
+    window.addEventListener("storage", onUpdate);
+    return () => {
+      window.removeEventListener("xinshi-garden-backup-updated", onUpdate);
+      window.removeEventListener("storage", onUpdate);
+    };
+  }, []);
+
+  const exportBackup = () => {
+    try {
+      const payload = saveLocalBackupSnapshot("export");
+      const size = downloadBackupPayload(payload);
+      const iso = new Date().toISOString();
+      writeBackupMeta({
+        lastBackupAt: iso,
+        lastExportAt: iso,
+        lastBackupType: "export",
+        lastBackupError: "",
+      });
+      refresh();
+      setMessage(`已导出备份文件（${bytesToSize(size)}）。请把它保存到 iCloud Drive / Files / Google Drive，别只留在浏览器里。`);
+    } catch (err) {
+      console.error(err);
+      writeBackupMeta({ lastBackupError: "导出失败：可能是浏览器阻止下载，或本地空间不足。" });
+      refresh();
+      setMessage("导出失败。可以先清理一点浏览器空间，再试一次。截图、照片多的时候 JSON 会比较大。");
+    }
+  };
+
+  const saveSnapshotNow = () => {
+    try {
+      const payload = saveLocalBackupSnapshot("manual-local");
+      const size = new Blob([JSON.stringify(payload)]).size;
+      refresh();
+      setMessage(`已在浏览器本地保存一份快照（${bytesToSize(size)}）。但它仍然怕卸载/清 Safari 数据，真正保险还是导出到云盘。`);
+    } catch (err) {
+      console.error(err);
+      writeBackupMeta({ lastBackupError: "本地快照失败：空间可能满了，请立刻导出 JSON。" });
+      refresh();
+      setMessage("本地快照失败：本地空间可能满了。请尽快导出备份文件，或者删掉一些大图片记录。 ");
+    }
+  };
+
+  const restoreLocalSnapshot = () => {
+    try {
+      const raw = localStorage.getItem(BACKUP_SNAPSHOT_KEY);
+      if (!raw) {
+        alert("还没有本地快照可以恢复。请使用你导出的 JSON 文件导入。");
+        return;
+      }
+
+      const parsed = JSON.parse(raw);
+      const snapshot = extractBackupStorage(parsed);
+      if (!snapshot) {
+        alert("本地快照已损坏，无法恢复。请改用导出的 JSON 文件。");
+        return;
+      }
+
+      const ok = window.confirm("将用最近一次本地快照覆盖当前数据。确定恢复吗？");
+      if (!ok) return;
+
+      BACKUP_STORAGE_ITEMS.forEach((item) => {
+        const value = snapshot[item.key];
+        if (value === null || typeof value === "undefined") {
+          localStorage.removeItem(item.key);
+        } else {
+          localStorage.setItem(item.key, JSON.stringify(value));
+        }
+      });
+
+      const iso = new Date().toISOString();
+      writeBackupMeta({
+        lastBackupAt: iso,
+        lastImportAt: iso,
+        lastBackupType: "import",
+        lastImportedFileName: "浏览器本地快照",
+        lastBackupError: "",
+      });
+
+      alert("已从本地快照恢复，页面会刷新。");
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      alert("恢复失败：本地快照无法读取，或浏览器空间异常。");
+    }
+  };
+
+  const importBackup = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,application/json";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const incoming = extractBackupStorage(parsed);
+        if (!incoming) {
+          alert("这个文件看起来不是心事花园备份 JSON。请确认你选择的是导出的备份文件。");
+          return;
+        }
+
+        const keysToImport = BACKUP_STORAGE_ITEMS.filter((item) => Object.prototype.hasOwnProperty.call(incoming, item.key));
+        if (keysToImport.length === 0) {
+          alert("这个备份里没有找到可导入的数据。导入已取消。");
+          return;
+        }
+
+        const ok = window.confirm(
+          `将导入 ${keysToImport.length} 类数据，并覆盖当前本地数据。\n\n导入前会先在本机保存一份当前数据快照，但如果你已经删过 App/清过数据，它也救不回来。确定继续吗？`
+        );
+        if (!ok) return;
+
+        try {
+          saveLocalBackupSnapshot("manual-local");
+        } catch {
+          // If local snapshot fails, continue only with user confirmation.
+          const stillImport = window.confirm("导入前的本地快照保存失败，可能是空间不足。仍然继续导入吗？");
+          if (!stillImport) return;
+        }
+
+        keysToImport.forEach((item) => {
+          const value = incoming[item.key];
+          if (value === null || typeof value === "undefined") {
+            localStorage.removeItem(item.key);
+          } else {
+            localStorage.setItem(item.key, JSON.stringify(value));
+          }
+        });
+
+        const iso = new Date().toISOString();
+        writeBackupMeta({
+          lastBackupAt: iso,
+          lastImportAt: iso,
+          lastBackupType: "import",
+          lastImportedFileName: file.name,
+          lastBackupError: "",
+        });
+
+        alert("导入成功，页面会刷新来读取新数据。");
+        window.location.reload();
+      } catch (err) {
+        console.error(err);
+        alert("导入失败：文件格式不对，或备份文件太大/已损坏。");
+      }
+    };
+    input.click();
+  };
+
+  const lastBackupLabel = formatBackupDateTime(meta.lastBackupAt || meta.lastAutoBackupAt || meta.lastExportAt || meta.lastImportAt);
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
+        <div>
+          <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.accent, flexShrink: 0 }} />
+            备份保险箱 🛟
+          </h2>
+          <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6, paddingLeft: 12 }}>
+            本地记录很脆：删主屏幕书签、清 Safari 网站数据、换浏览器，都可能清空。备份文件才是保命绳。
+          </div>
+        </div>
+      </div>
+
+      <Card style={{ border: `2px solid ${COLORS.accent}`, background: "linear-gradient(160deg, #FFFFFF 0%, #FFF3F7 100%)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 14 }}>
+          <div style={{ background: "rgba(199,108,132,.12)", borderRadius: 18, padding: "13px", textAlign: "center" }}>
+            <div style={{ color: COLORS.accent, fontSize: 20, fontWeight: 950, lineHeight: 1.35 }}>{lastBackupLabel}</div>
+            <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800, marginTop: 4 }}>上一次备份时间</div>
+          </div>
+          <div style={{ background: "rgba(111,166,106,.12)", borderRadius: 18, padding: "13px", textAlign: "center" }}>
+            <div style={{ color: COLORS.green, fontSize: 28, fontWeight: 950 }}>{stats.total}</div>
+            <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>当前可备份记录</div>
+          </div>
+          <div style={{ background: "rgba(121,169,164,.12)", borderRadius: 18, padding: "13px", textAlign: "center" }}>
+            <div style={{ color: COLORS.blue, fontSize: 28, fontWeight: 950 }}>{bytesToSize(stats.size)}</div>
+            <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>备份文件大小</div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+          <Btn onClick={exportBackup} color={COLORS.accent}>导出备份 JSON</Btn>
+          <Btn onClick={importBackup} outline color={COLORS.primary}>导入备份 JSON</Btn>
+          <Btn onClick={saveSnapshotNow} outline color={COLORS.blue}>立即保存本地快照</Btn>
+          <Btn onClick={restoreLocalSnapshot} outline color={COLORS.purple}>从本地快照恢复</Btn>
+        </div>
+
+        <div style={{ color: COLORS.muted, fontSize: 14, lineHeight: 1.8 }}>
+          自动备份：每次记录变化后，App 会自动保存一份最新快照到浏览器本地。<strong style={{ color: COLORS.danger }}>但这份快照也属于本地数据</strong>，卸载/清数据可能一起没。最安全做法：每隔一阵点击“导出备份 JSON”，保存到 iCloud Drive 或 Google Drive。
+        </div>
+
+        {meta.lastExportAt && (
+          <div style={{ marginTop: 8, color: COLORS.muted, fontSize: 13, lineHeight: 1.7 }}>
+            上一次导出：{formatBackupDateTime(meta.lastExportAt)}
+          </div>
+        )}
+        {meta.lastImportAt && (
+          <div style={{ marginTop: 4, color: COLORS.muted, fontSize: 13, lineHeight: 1.7 }}>
+            上一次导入：{formatBackupDateTime(meta.lastImportAt)}{meta.lastImportedFileName ? `（${meta.lastImportedFileName}）` : ""}
+          </div>
+        )}
+      </Card>
+
+      {(message || meta.lastBackupError) && (
+        <Card style={{ borderLeft: `4px solid ${meta.lastBackupError ? COLORS.danger : COLORS.primary}` }}>
+          <div style={{ color: meta.lastBackupError ? COLORS.danger : COLORS.primary, fontWeight: 900, marginBottom: 6 }}>
+            {meta.lastBackupError ? "备份提醒" : "备份结果"}
+          </div>
+          <div style={{ color: COLORS.muted, fontSize: 14, lineHeight: 1.8 }}>
+            {meta.lastBackupError || message}
+          </div>
+        </Card>
+      )}
+
+      <Card>
+        <div style={{ color: COLORS.text, fontSize: 17, fontWeight: 900, marginBottom: 10 }}>这次备份会包含</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(135px, 1fr))", gap: 8 }}>
+          {stats.rows.map((row) => (
+            <div key={row.key} style={{ background: COLORS.light, borderRadius: 14, padding: "9px 11px", display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+              <span style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>{row.label}</span>
+              <Tag color={row.count > 0 ? COLORS.soft : "rgba(127,118,103,.12)"} textColor={row.count > 0 ? COLORS.accent : COLORS.muted}>{row.count}</Tag>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card style={{ background: "linear-gradient(160deg, #FFFDF7 0%, #FFF8EA 100%)" }}>
+        <div style={{ color: COLORS.text, fontSize: 17, fontWeight: 900, marginBottom: 8 }}>恢复数据怎么做</div>
+        <div style={{ color: COLORS.muted, fontSize: 14, lineHeight: 1.85 }}>
+          新手机 / 重新添加主屏幕 / 本地数据空了：先打开这个 Tab，点“导入备份 JSON”，选择你之前保存到 Files 或云盘里的备份文件。导入会覆盖当前本地数据，所以空白新环境最适合直接导入。
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+
 // ─── App Shell ────────────────────────────────────────────────────────────────
 export default function CoupleDiary() {
   const [activeTab, setActiveTab] = useState<TabId>("diary");
@@ -4759,12 +5216,44 @@ export default function CoupleDiary() {
   const [successEntries, setSuccessEntries] = useLocalStorage<SuccessEntry[]>("couple-diary-success-v1", []);
   const [moodLogEntries, setMoodLogEntries] = useLocalStorage<MoodLogEntry[]>("couple-diary-mood-log-v1", []);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        saveLocalBackupSnapshot("auto");
+      } catch (err) {
+        console.error(err);
+        writeBackupMeta({
+          lastBackupError: "自动备份失败：本地空间可能满了。请尽快导出备份 JSON 到 iCloud Drive / Files。",
+        });
+      }
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    diary,
+    jokes,
+    checkins,
+    calendarData,
+    whispers,
+    wishes,
+    schedule,
+    shopping,
+    fiveYearDiary,
+    fiveYearPhotos,
+    readingBooks,
+    gameEntries,
+    crochetProjects,
+    successEntries,
+    moodLogEntries,
+  ]);
+
   const renderTab = () => {
     switch (activeTab) {
       case "diary":    return <DiaryTab    data={diary}        setData={setDiary} />;
       case "moodLog":  return <MoodLogTab data={moodLogEntries} setData={setMoodLogEntries} />;
       case "success":  return <SuccessDiaryTab data={successEntries} setData={setSuccessEntries} />;
       case "fiveYear": return <FiveYearDiaryTab data={fiveYearDiary} setData={setFiveYearDiary} diary={diary} setDiary={setDiary} successEntries={successEntries} photos={fiveYearPhotos} setPhotos={setFiveYearPhotos} />;
+      case "backup":   return <BackupTab />;
       case "reading":  return <ReadingTab  data={readingBooks} setData={setReadingBooks} />;
       case "games":    return <GameTrackerTab data={gameEntries} setData={setGameEntries} />;
       case "crochet":  return <CrochetBasketTab data={crochetProjects} setData={setCrochetProjects} />;
