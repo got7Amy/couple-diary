@@ -44,7 +44,6 @@ type TabId =
   | "checkin"
   | "schedule"
   | "shopping"
-  | "reminder"
   | "whisper"
   | "jokes"
   | "calendar"
@@ -61,7 +60,6 @@ const TABS: { id: TabId; icon: string; label: string }[] = [
   { id: "checkin",  icon: "✅", label: "打卡" },
   { id: "schedule", icon: "🗓", label: "本周计划" },
   { id: "shopping", icon: "🛒", label: "购物清单" },
-  { id: "reminder", icon: "🔔", label: "提醒他" },
   { id: "whisper",  icon: "💌", label: "悄悄话" },
   { id: "jokes",    icon: "😂", label: "笑话库" },
   { id: "calendar", icon: "📅", label: "日历" },
@@ -198,12 +196,6 @@ type ScheduleEntry = BaseItem & {
   sortOrder?: number;
 };
 
-type ReminderEntry = BaseItem & {
-  content: string;
-  urgency: string;
-  date: string;
-  done: boolean;
-};
 
 type ShoppingEntry = BaseItem & {
   name: string;
@@ -2215,134 +2207,6 @@ function ScheduleTab({ data, setData }: { data: ScheduleEntry[]; setData: Setter
           )
         )}
       </div>
-    </div>
-  );
-}
-
-// ─── Reminder ─────────────────────────────────────────────────────────────────
-function ReminderTab({ data, setData }: { data: ReminderEntry[]; setData: Setter<ReminderEntry[]> }) {
-  const blank = { content: "", urgency: "普通", date: "" };
-  const [form, setForm] = useState(blank);
-  const [adding, setAdding] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState(blank);
-
-  const URGENCY = ["紧急","普通","随时"];
-  const URGENCY_COLOR: Record<string, string> = { 紧急: "#FFE0E0", 普通: COLORS.light, 随时: "#E8F5E8" };
-  const URGENCY_DOT: Record<string, string> = { 紧急: "#FF6B6B", 普通: COLORS.primary, 随时: COLORS.green };
-
-  const save = () => {
-    if (!form.content.trim()) return;
-    setData((prev) => [{ id: uid(), createdAt: now(), done: false, ...form }, ...prev]);
-    setForm(blank);
-    setAdding(false);
-  };
-
-  const saveEdit = () => {
-    if (!editId || !editForm.content.trim()) return;
-    setData((prev) =>
-      prev.map((r) => (r.id === editId ? { ...r, ...editForm, updatedAt: now() } : r))
-    );
-    setEditId(null);
-  };
-
-  const toggle = (id: string) =>
-    setData((prev) => prev.map((r) => (r.id === id ? { ...r, done: !r.done, updatedAt: now() } : r)));
-
-  const Fields = ({ value, setValue }: { value: typeof blank; setValue: Setter<typeof blank> }) => (
-    <>
-      <Input value={value.content} onChange={(v) => setValue((p) => ({ ...p, content: v }))} placeholder="要提醒他的事…" style={{ marginBottom: 10 }} />
-      <Input value={value.date} onChange={(v) => setValue((p) => ({ ...p, date: v }))} placeholder="提醒时间（可选）" style={{ marginBottom: 10 }} />
-      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-        {URGENCY.map((u) => (
-          <span key={u} onClick={() => setValue((p) => ({ ...p, urgency: u }))}
-            style={{ padding: "6px 14px", borderRadius: 999, background: value.urgency === u ? COLORS.primary : COLORS.light, color: value.urgency === u ? "#fff" : COLORS.muted, cursor: "pointer", fontSize: 14, fontWeight: 800, transition: "background .15s" }}>
-            {u}
-          </span>
-        ))}
-      </div>
-    </>
-  );
-
-  const ReminderCard = ({ r }: { r: ReminderEntry }) => (
-    <Card style={{ background: URGENCY_COLOR[r.urgency], borderLeft: `4px solid ${URGENCY_DOT[r.urgency]}`, opacity: r.done ? 0.65 : 1 }}>
-      {editId === r.id ? (
-        <>
-          {Fields({ value: editForm, setValue: setEditForm })}
-          <FormActions onSave={saveEdit} onCancel={() => setEditId(null)} saveText="保存修改" />
-        </>
-      ) : (
-        <>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-            <div
-              onClick={() => toggle(r.id)}
-              style={{
-                width: 24, height: 24, borderRadius: "50%",
-                border: r.done ? "none" : `2px solid ${URGENCY_DOT[r.urgency]}`,
-                background: r.done ? COLORS.green : "transparent",
-                cursor: "pointer", flexShrink: 0, marginTop: 2,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                transition: "background .2s",
-              }}
-            >
-              {r.done && <span style={{ color: "#fff", fontSize: 13 }}>✓</span>}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 800, color: COLORS.text, marginBottom: 4, textDecoration: r.done ? "line-through" : "none", wordBreak: "break-word" }}>{r.content}</div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Tag color={URGENCY_COLOR[r.urgency]}>{r.urgency}</Tag>
-                {r.date && <span style={{ fontSize: 13, color: COLORS.muted }}>{r.date}</span>}
-              </div>
-            </div>
-          </div>
-          <div style={{ marginTop: 12 }}>
-            <ActionButtons
-              onEdit={() => {
-                setEditId(r.id);
-                setEditForm({ content: r.content, urgency: r.urgency, date: r.date });
-              }}
-              onDelete={() => {
-                if (confirmDelete()) setData((prev) => prev.filter((x) => x.id !== r.id));
-              }}
-            />
-          </div>
-        </>
-      )}
-    </Card>
-  );
-
-  const todo = data.filter((r) => !r.done);
-  const done = data.filter((r) => r.done);
-
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.primary, flexShrink: 0 }} />
-          提醒他 🔔
-        </h2>
-        <Btn onClick={() => setAdding(!adding)} small>
-          {adding ? "取消" : "+ 加提醒"}
-        </Btn>
-      </div>
-
-      {adding && (
-        <Card style={{ border: `2px solid ${COLORS.secondary}` }}>
-          {Fields({ value: form, setValue: setForm })}
-          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="保存提醒 🔔" />
-        </Card>
-      )}
-
-      {data.length === 0 && !adding && <EmptyState emoji="🔔" text="还没有提醒，记下要告诉TA的重要事项吧～" />}
-
-      {todo.map((r) => <div key={r.id}>{ReminderCard({ r })}</div>)}
-
-      {done.length > 0 && (
-        <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 15, color: COLORS.muted, fontWeight: 900, marginBottom: 8 }}>已完成</div>
-          {done.map((r) => <div key={r.id}>{ReminderCard({ r })}</div>)}
-        </div>
-      )}
     </div>
   );
 }
@@ -5467,7 +5331,6 @@ export default function CoupleDiary() {
   const [wishes,    setWishes]    = useLocalStorage<WishEntry[]>    ("couple-diary-wishes-v2",    []);
   const [schedule,  setSchedule]  = useLocalStorage<ScheduleEntry[]>("couple-diary-schedule-v2",  []);
   const [shopping,  setShopping]  = useLocalStorage<ShoppingEntry[]>("couple-diary-shopping-v1",  []);
-  const [reminders, setReminders] = useLocalStorage<ReminderEntry[]>("couple-diary-reminders-v2", []);
   const [fiveYearDiary, setFiveYearDiary] = useLocalStorage<FiveYearDiaryData>("couple-diary-five-year-v1", {});
   const [fiveYearPhotos, setFiveYearPhotos] = useLocalStorage<FiveYearPhotosData>("couple-diary-fiveyear-photos-v1", {});
   const [readingBooks, setReadingBooks] = useLocalStorage<ReadingBookEntry[]>("couple-diary-reading-v1", []);
@@ -5488,7 +5351,6 @@ export default function CoupleDiary() {
       case "checkin":  return <CheckinTab  data={checkins}     setData={setCheckins} />;
       case "schedule": return <ScheduleTab data={schedule}     setData={setSchedule} />;
       case "shopping": return <ShoppingTab data={shopping}     setData={setShopping} />;
-      case "reminder": return <ReminderTab data={reminders}    setData={setReminders} />;
       case "whisper":  return <WhisperTab  data={whispers}     setData={setWhispers} />;
       case "jokes":    return <JokesTab    data={jokes}        setData={setJokes} />;
       case "calendar": return <CalendarTab data={calendarData} setData={setCalendarData} />;
