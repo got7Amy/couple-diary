@@ -35,6 +35,7 @@ const BTN_GRADIENTS: Record<string, string> = {
 
 type TabId =
   | "diary"
+  | "success"
   | "fiveYear"
   | "reading"
   | "checkin"
@@ -48,6 +49,7 @@ type TabId =
 
 const TABS: { id: TabId; icon: string; label: string }[] = [
   { id: "diary",    icon: "📖", label: "心情日记" },
+  { id: "success",  icon: "🏆", label: "成功日记" },
   { id: "fiveYear", icon: "📚", label: "五年日记" },
   { id: "reading",  icon: "📕", label: "读书" },
   { id: "checkin",  icon: "✅", label: "打卡" },
@@ -107,6 +109,14 @@ type DiaryEntry = BaseItem & {
   title: string;
   content: string;
   source?: "diary" | "fiveYear";
+};
+
+type SuccessEntry = BaseItem & {
+  date: string;
+  content: string;
+  category: string;
+  evidence: string;
+  energy: string;
 };
 
 type FiveYearDiaryEntry = BaseItem & {
@@ -832,6 +842,307 @@ function DiaryTab({ data, setData }: { data: DiaryEntry[]; setData: Setter<Diary
     </div>
   );
 }
+
+
+// ─── Success Diary ────────────────────────────────────────────────────────────
+type SuccessForm = Omit<SuccessEntry, keyof BaseItem>;
+
+const SUCCESS_CATEGORIES = [
+  { label: "完成了", emoji: "✅", color: COLORS.green },
+  { label: "推进了一点", emoji: "🌱", color: COLORS.blue },
+  { label: "照顾了自己", emoji: "🫶", color: COLORS.purple },
+  { label: "勇敢了一下", emoji: "🦁", color: COLORS.yellow },
+  { label: "扛住了", emoji: "🪨", color: COLORS.muted },
+];
+
+const SUCCESS_ENERGY = ["✨", "⭐", "🌟", "🔥", "💪", "🌈"];
+
+const getSuccessCategoryMeta = (category?: string) =>
+  SUCCESS_CATEGORIES.find((item) => item.label === category) || SUCCESS_CATEGORIES[0];
+
+const countSuccessDays = (entries: SuccessEntry[]) =>
+  new Set(entries.filter((entry) => entry.date).map((entry) => entry.date)).size;
+
+function SuccessDiaryTab({ data, setData }: { data: SuccessEntry[]; setData: Setter<SuccessEntry[]> }) {
+  const blank: SuccessForm = {
+    date: today(),
+    content: "",
+    category: "完成了",
+    evidence: "",
+    energy: "✨",
+  };
+
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState<SuccessForm>(blank);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<SuccessForm>(blank);
+
+  const sorted = [...data].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+  const todayEntries = data.filter((entry) => entry.date === today());
+  const totalDays = countSuccessDays(data);
+  const latestDate = sorted[0]?.date;
+  const latestDayEntries = latestDate ? sorted.filter((entry) => entry.date === latestDate) : [];
+
+  const groupedByDate = sorted.reduce<Record<string, SuccessEntry[]>>((acc, entry) => {
+    const key = entry.date || today();
+    acc[key] = acc[key] || [];
+    acc[key].push(entry);
+    return acc;
+  }, {});
+
+  const save = () => {
+    const content = form.content.trim();
+    const evidence = form.evidence.trim();
+    if (!content) return;
+    setData((prev) => [
+      {
+        id: uid(),
+        createdAt: now(),
+        ...form,
+        content,
+        evidence,
+        category: form.category || "完成了",
+        energy: form.energy || "✨",
+      },
+      ...prev,
+    ]);
+    setForm(blank);
+    setAdding(false);
+  };
+
+  const saveEdit = () => {
+    const content = editForm.content.trim();
+    const evidence = editForm.evidence.trim();
+    if (!editId || !content) return;
+    setData((prev) =>
+      prev.map((entry) =>
+        entry.id === editId
+          ? {
+              ...entry,
+              ...editForm,
+              content,
+              evidence,
+              category: editForm.category || "完成了",
+              energy: editForm.energy || "✨",
+              updatedAt: now(),
+            }
+          : entry
+      )
+    );
+    setEditId(null);
+  };
+
+  const startEdit = (entry: SuccessEntry) => {
+    setAdding(false);
+    setEditId(entry.id);
+    setEditForm({
+      date: entry.date || today(),
+      content: entry.content || "",
+      category: entry.category || "完成了",
+      evidence: entry.evidence || "",
+      energy: entry.energy || "✨",
+    });
+  };
+
+  const Fields = ({
+    value,
+    setValue,
+  }: {
+    value: SuccessForm;
+    setValue: Setter<SuccessForm>;
+  }) => (
+    <>
+      <Input
+        type="date"
+        value={value.date}
+        onChange={(v) => setValue((p) => ({ ...p, date: v || today() }))}
+        style={{ marginBottom: 10, width: 180 }}
+      />
+
+      <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 10 }}>
+        {SUCCESS_CATEGORIES.map((item) => (
+          <span
+            key={item.label}
+            onClick={() => setValue((p) => ({ ...p, category: item.label }))}
+            style={{
+              padding: "7px 12px",
+              borderRadius: 999,
+              background: value.category === item.label ? item.color : COLORS.light,
+              color: value.category === item.label ? "#fff" : COLORS.muted,
+              cursor: "pointer",
+              fontSize: 14,
+              fontWeight: 900,
+              boxShadow: value.category === item.label ? "0 2px 10px rgba(61,34,24,.12)" : "none",
+              transition: "background .15s, transform .15s",
+            }}
+          >
+            {item.emoji} {item.label}
+          </span>
+        ))}
+      </div>
+
+      <div
+        style={{
+          background: "rgba(253,232,224,.5)",
+          borderRadius: 16,
+          padding: "10px 12px",
+          color: COLORS.muted,
+          fontSize: 13,
+          lineHeight: 1.7,
+          marginBottom: 10,
+        }}
+      >
+        可以写很小的事：洗了杯子、修了一个 bug、带娃出了门、按时吃饭、没有崩掉、终于问清楚一件事。它不是 KPI，是给自己留证据。
+      </div>
+
+      <Input
+        value={value.content}
+        onChange={(v) => setValue((p) => ({ ...p, content: v }))}
+        placeholder="今天我完成了什么？再小都算。"
+        multiline
+        rows={3}
+        style={{ marginBottom: 10 }}
+      />
+
+      <Input
+        value={value.evidence}
+        onChange={(v) => setValue((p) => ({ ...p, evidence: v }))}
+        placeholder="这说明我……（可选，比如：我不是一事无成 / 我有在推进）"
+        multiline
+        rows={2}
+        style={{ marginBottom: 10 }}
+      />
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+        <span style={{ color: COLORS.muted, fontSize: 14, fontWeight: 800 }}>给它一个小印章</span>
+        {SUCCESS_ENERGY.map((emoji) => (
+          <span
+            key={emoji}
+            onClick={() => setValue((p) => ({ ...p, energy: emoji }))}
+            style={{
+              fontSize: 24,
+              cursor: "pointer",
+              opacity: value.energy === emoji ? 1 : 0.35,
+              transform: value.energy === emoji ? "scale(1.18)" : "scale(1)",
+              transition: "opacity .15s, transform .15s",
+              display: "inline-block",
+            }}
+          >
+            {emoji}
+          </span>
+        ))}
+      </div>
+    </>
+  );
+
+  const SuccessCard = ({ entry }: { entry: SuccessEntry }) => {
+    const meta = getSuccessCategoryMeta(entry.category);
+    return (
+      <Card style={{ borderLeft: `4px solid ${meta.color}` }}>
+        {editId === entry.id ? (
+          <>
+            {Fields({ value: editForm, setValue: setEditForm })}
+            <FormActions onSave={saveEdit} onCancel={() => setEditId(null)} saveText="保存修改" color={COLORS.green} />
+          </>
+        ) : (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", minWidth: 0 }}>
+                <span style={{ fontSize: 24 }}>{entry.energy || meta.emoji}</span>
+                <Tag color={`${meta.color}22`} textColor={meta.color}>{meta.emoji} {entry.category || meta.label}</Tag>
+              </div>
+              <Tag>{fmtDate(entry.date)}</Tag>
+            </div>
+
+            <div style={{ color: COLORS.text, fontSize: 17, fontWeight: 800, lineHeight: 1.75, whiteSpace: "pre-wrap", wordBreak: "break-word", marginBottom: entry.evidence ? 8 : 12 }}>
+              {entry.content}
+            </div>
+
+            {entry.evidence && (
+              <div style={{ background: COLORS.light, borderRadius: 14, padding: "10px 12px", color: COLORS.muted, fontSize: 15, lineHeight: 1.75, whiteSpace: "pre-wrap", wordBreak: "break-word", marginBottom: 12 }}>
+                <strong style={{ color: COLORS.accent }}>证据：</strong>{entry.evidence}
+              </div>
+            )}
+
+            <ActionButtons
+              onEdit={() => startEdit(entry)}
+              onDelete={() => {
+                if (confirmDelete()) setData((prev) => prev.filter((item) => item.id !== entry.id));
+              }}
+            />
+          </>
+        )}
+      </Card>
+    );
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
+        <div>
+          <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.green, flexShrink: 0 }} />
+            成功日记 🏆
+          </h2>
+          <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6, paddingLeft: 12 }}>
+            只记录事实：我做了，它存在。再小也算数。
+          </div>
+        </div>
+        <Btn onClick={() => setAdding(!adding)} small color={COLORS.green}>
+          {adding ? "取消" : "+ 记一件小成功"}
+        </Btn>
+      </div>
+
+      <Card style={{ border: `2px solid ${COLORS.green}`, background: "linear-gradient(160deg, #FFFFFF 0%, #F4FFF6 100%)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10 }}>
+          <div style={{ background: "rgba(104,174,126,.1)", borderRadius: 18, padding: "12px", textAlign: "center" }}>
+            <div style={{ color: COLORS.green, fontSize: 26, fontWeight: 900 }}>{todayEntries.length}</div>
+            <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>今天的小成功</div>
+          </div>
+          <div style={{ background: "rgba(232,115,90,.1)", borderRadius: 18, padding: "12px", textAlign: "center" }}>
+            <div style={{ color: COLORS.primary, fontSize: 26, fontWeight: 900 }}>{data.length}</div>
+            <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>总证据数</div>
+          </div>
+          <div style={{ background: "rgba(104,152,184,.12)", borderRadius: 18, padding: "12px", textAlign: "center" }}>
+            <div style={{ color: COLORS.blue, fontSize: 26, fontWeight: 900 }}>{totalDays}</div>
+            <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>有记录的日子</div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 12, color: COLORS.muted, fontSize: 14, lineHeight: 1.7 }}>
+          今天先写 1 件就够了；状态好的时候写 3 件。重点不是“多优秀”，而是让大脑看见：你确实在活、在做、在撑、在推进。
+        </div>
+      </Card>
+
+      {adding && (
+        <Card style={{ border: `2px solid ${COLORS.green}` }}>
+          {Fields({ value: form, setValue: setForm })}
+          <FormActions onSave={save} onCancel={() => setAdding(false)} saveText="收进证据库 🏆" color={COLORS.green} />
+        </Card>
+      )}
+
+      {data.length === 0 && !adding && <EmptyState emoji="🏆" text="还没有成功日记。先写一件小到不能再小的事：你做了，它就算。" />}
+
+      {latestDayEntries.length > 0 && (
+        <div style={{ margin: "16px 0 10px", color: COLORS.green, fontWeight: 900, fontSize: 16 }}>
+          最近一次：{fmtDateWithYear(latestDate!)}
+        </div>
+      )}
+
+      {Object.entries(groupedByDate).map(([date, entries], groupIndex) => (
+        <div key={date}>
+          {groupIndex > 0 && (
+            <div style={{ margin: "20px 0 10px", color: COLORS.accent, fontWeight: 900, fontSize: 16 }}>
+              {fmtDateWithYear(date)}
+            </div>
+          )}
+          {entries.map((entry) => <div key={entry.id}>{SuccessCard({ entry })}</div>)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 
 // ─── Jokes ────────────────────────────────────────────────────────────────────
 type JokeForm = Omit<JokeEntry, keyof BaseItem>;
@@ -2364,6 +2675,7 @@ function FiveYearDiaryTab({
   setData,
   diary,
   setDiary,
+  successEntries,
   photos,
   setPhotos,
 }: {
@@ -2371,6 +2683,7 @@ function FiveYearDiaryTab({
   setData: Setter<FiveYearDiaryData>;
   diary: DiaryEntry[];
   setDiary: Setter<DiaryEntry[]>;
+  successEntries: SuccessEntry[];
   photos: FiveYearPhotosData;
   setPhotos: Setter<FiveYearPhotosData>;
 }) {
@@ -2398,6 +2711,13 @@ function FiveYearDiaryTab({
 
   const moodEntriesByDate = diary.reduce<Record<string, DiaryEntry[]>>((acc, entry) => {
     if (!entry.date || isFiveYearDiaryEntry(entry)) return acc;
+    acc[entry.date] = acc[entry.date] || [];
+    acc[entry.date].push(entry);
+    return acc;
+  }, {});
+
+  const successEntriesByDate = successEntries.reduce<Record<string, SuccessEntry[]>>((acc, entry) => {
+    if (!entry.date || !entry.content?.trim()) return acc;
     acc[entry.date] = acc[entry.date] || [];
     acc[entry.date].push(entry);
     return acc;
@@ -2707,8 +3027,9 @@ function FiveYearDiaryTab({
         const ownEntries = getEntriesForDate(date);
         const legacyEntries = (legacyFiveYearEntriesByDate[date] || []).sort((a, b) => b.createdAt - a.createdAt);
         const moodEntries = (moodEntriesByDate[date] || []).sort((a, b) => b.createdAt - a.createdAt);
+        const successEntriesForDate = (successEntriesByDate[date] || []).sort((a, b) => b.createdAt - a.createdAt);
         const photoList = photos[date] || [];
-        const hasAnything = ownEntries.length > 0 || legacyEntries.length > 0 || moodEntries.length > 0 || photoList.length > 0;
+        const hasAnything = ownEntries.length > 0 || legacyEntries.length > 0 || moodEntries.length > 0 || successEntriesForDate.length > 0 || photoList.length > 0;
 
         return (
           <Card key={date} style={{ borderLeft: `4px solid ${date === currentDate ? COLORS.purple : COLORS.secondary}` }}>
@@ -2745,6 +3066,27 @@ function FiveYearDiaryTab({
             {legacyEntries.map((entry) => (
               <div key={entry.id}>{FiveYearEntryBlock({ entry, source: "legacy" })}</div>
             ))}
+
+            {successEntriesForDate.map((entry) => {
+              const meta = getSuccessCategoryMeta(entry.category);
+              return (
+                <div key={entry.id} style={{ background: "rgba(232,248,235,.7)", borderRadius: 16, padding: "12px 14px", marginBottom: 10, borderLeft: `4px solid ${meta.color}` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 22 }}>{entry.energy || meta.emoji}</span>
+                    <strong style={{ color: COLORS.text, fontSize: 16, wordBreak: "break-word" }}>成功日记</strong>
+                    <Tag color={`${meta.color}22`} textColor={meta.color}>{meta.emoji} {entry.category || meta.label}</Tag>
+                  </div>
+                  <div style={{ color: COLORS.text, fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                    {entry.content}
+                  </div>
+                  {entry.evidence && (
+                    <div style={{ color: COLORS.muted, fontSize: 14, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word", marginTop: 6 }}>
+                      <strong style={{ color: COLORS.green }}>证据：</strong>{entry.evidence}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
             {moodEntries.map((entry) => (
               <div key={entry.id} style={{ background: "rgba(253,232,224,.55)", borderRadius: 16, padding: "12px 14px", marginBottom: 10 }}>
@@ -3324,11 +3666,13 @@ export default function CoupleDiary() {
   const [fiveYearDiary, setFiveYearDiary] = useLocalStorage<FiveYearDiaryData>("couple-diary-five-year-v1", {});
   const [fiveYearPhotos, setFiveYearPhotos] = useLocalStorage<FiveYearPhotosData>("couple-diary-fiveyear-photos-v1", {});
   const [readingBooks, setReadingBooks] = useLocalStorage<ReadingBookEntry[]>("couple-diary-reading-v1", []);
+  const [successEntries, setSuccessEntries] = useLocalStorage<SuccessEntry[]>("couple-diary-success-v1", []);
 
   const renderTab = () => {
     switch (activeTab) {
       case "diary":    return <DiaryTab    data={diary}        setData={setDiary} />;
-      case "fiveYear": return <FiveYearDiaryTab data={fiveYearDiary} setData={setFiveYearDiary} diary={diary} setDiary={setDiary} photos={fiveYearPhotos} setPhotos={setFiveYearPhotos} />;
+      case "success":  return <SuccessDiaryTab data={successEntries} setData={setSuccessEntries} />;
+      case "fiveYear": return <FiveYearDiaryTab data={fiveYearDiary} setData={setFiveYearDiary} diary={diary} setDiary={setDiary} successEntries={successEntries} photos={fiveYearPhotos} setPhotos={setFiveYearPhotos} />;
       case "reading":  return <ReadingTab  data={readingBooks} setData={setReadingBooks} />;
       case "checkin":  return <CheckinTab  data={checkins}     setData={setCheckins} />;
       case "schedule": return <ScheduleTab data={schedule}     setData={setSchedule} />;
