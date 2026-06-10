@@ -3999,6 +3999,26 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
     <div style={{ color: COLORS.muted, fontSize: 14, lineHeight: 1.7, padding: "8px 2px 14px" }}>{text}</div>
   );
 
+  const renderAddForm = () => (
+    <Card style={{ border: `2px solid ${getLongWritingMeta(form.kind).color}` }}>
+      {Fields({ value: form, setValue: setForm })}
+      <FormActions onSave={save} onCancel={resetAdd} saveText="保存到花卷 📜" color={getLongWritingMeta(form.kind).color} />
+    </Card>
+  );
+
+  const isAddingForYear = (year: number) =>
+    adding &&
+    (form.kind === "yearPlan" || form.kind === "monthPlan") &&
+    coercePlanningYear(form.year || form.month, selectedPeriodStart) === year &&
+    (form.periodStart || selectedPeriodStart) === selectedPeriodStart;
+
+  const isAddingFiveYear =
+    adding &&
+    (form.kind === "fiveYearPlan" || form.kind === "fiveYearReview") &&
+    (form.periodStart || selectedPeriodStart) === selectedPeriodStart;
+
+  const isAddingLetter = adding && LETTER_KINDS.includes(form.kind);
+
   const renderYearSection = (year: number) => {
     const yearKey = String(year);
     const collapsed = collapsedYears[yearKey] === true;
@@ -4020,13 +4040,35 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
           <h3 style={{ margin: 0, color: COLORS.text, fontSize: 19, fontWeight: 900 }}>{year} 年计划</h3>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Btn small outline color={COLORS.blue} onClick={() => setCollapsedYears((prev) => ({ ...prev, [yearKey]: !collapsed }))}>{collapsed ? "展开" : "收起"}</Btn>
-            <Btn small outline color={COLORS.blue} onClick={() => openForm("yearPlan", { year: String(year), periodStart: selectedPeriodStart, reviewContent: inheritedReview })}>+ 年计划</Btn>
-            <Btn small outline color={COLORS.accent} onClick={() => openForm("monthPlan", { year: String(year), month: `${year}-01`, periodStart: selectedPeriodStart })}>+ 月计划</Btn>
+            <Btn
+              small
+              outline
+              color={COLORS.blue}
+              onClick={() => {
+                setCollapsedYears((prev) => ({ ...prev, [yearKey]: false }));
+                openForm("yearPlan", { year: String(year), periodStart: selectedPeriodStart, reviewContent: inheritedReview });
+              }}
+            >
+              + 年计划
+            </Btn>
+            <Btn
+              small
+              outline
+              color={COLORS.accent}
+              onClick={() => {
+                setCollapsedYears((prev) => ({ ...prev, [yearKey]: false }));
+                openForm("monthPlan", { year: String(year), month: `${year}-01`, periodStart: selectedPeriodStart });
+              }}
+            >
+              + 月计划
+            </Btn>
           </div>
         </div>
 
         {!collapsed && (
           <>
+            {isAddingForYear(year) && renderAddForm()}
+
             {!hasContent && <SmallEmpty text="这一年还没有计划。先写一个年计划；月计划会放在它下面，年终总结也在年计划最下面补。" />}
 
             {yearPlans.length === 0 && hasContent && (
@@ -4107,20 +4149,25 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
         </div>
       </Card>
 
-      {adding && (
-        <Card style={{ border: `2px solid ${getLongWritingMeta(form.kind).color}` }}>
-          {Fields({ value: form, setValue: setForm })}
-          <FormActions onSave={save} onCancel={resetAdd} saveText="保存到花卷 📜" color={getLongWritingMeta(form.kind).color} />
-        </Card>
-      )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "18px 0 10px" }}>
         <h3 style={{ margin: 0, color: COLORS.purple, fontSize: 18, fontWeight: 900 }}>{fiveYearPeriodLabel(selectedPeriodStart)} · 五年计划</h3>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Btn small outline color={COLORS.purple} onClick={() => setFiveYearCollapsed((prev) => !prev)}>{fiveYearCollapsed ? "展开" : "收起"}</Btn>
-          <Btn small color={COLORS.purple} onClick={() => openForm("fiveYearPlan", { periodStart: selectedPeriodStart, periodEnd: selectedPeriodEnd, year: fiveYearPeriodLabel(selectedPeriodStart), reviewContent: inheritedFiveYearReview })}>+ 五年计划</Btn>
+          <Btn
+            small
+            color={COLORS.purple}
+            onClick={() => {
+              setFiveYearCollapsed(false);
+              openForm("fiveYearPlan", { periodStart: selectedPeriodStart, periodEnd: selectedPeriodEnd, year: fiveYearPeriodLabel(selectedPeriodStart), reviewContent: inheritedFiveYearReview });
+            }}
+          >
+            + 五年计划
+          </Btn>
         </div>
       </div>
+
+      {!fiveYearCollapsed && isAddingFiveYear && renderAddForm()}
 
       {!fiveYearCollapsed && (
         <>
@@ -4144,6 +4191,7 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
           <Btn small outline color={COLORS.primary} onClick={() => openForm("letterOther")}>+ 写给别人</Btn>
         </div>
       </div>
+      {isAddingLetter && renderAddForm()}
       {letters.length === 0 && <SmallEmpty text="还没有信。可以写给未来的自己，也可以写一封不必发出去的信。" />}
       {letters.map((entry) => <div key={entry.id}>{renderWritingCard(entry)}</div>)}
     </div>
