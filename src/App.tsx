@@ -51,21 +51,21 @@ type TabId =
   | "backup";
 
 const TABS: { id: TabId; icon: string; label: string }[] = [
-  { id: "diary",    icon: "🌸", label: "心情花笺" },
-  { id: "moodLog",  icon: "🌦️", label: "情绪天气" },
+  { id: "diary",    icon: "🌸", label: "心情" },
+  { id: "moodLog",  icon: "🌦️", label: "情绪" },
+  { id: "schedule", icon: "🪴", label: "本周" },
   { id: "success",  icon: "🌱", label: "小成功" },
-  { id: "fiveYear", icon: "🌳", label: "五年花历" },
-  { id: "backup",   icon: "🛟", label: "备份保险箱" },
-  { id: "reading",  icon: "📚", label: "阅读花架" },
-  { id: "games",    icon: "🎮", label: "游戏角落" },
-  { id: "crochet",  icon: "🧶", label: "钩织花篮" },
-  { id: "checkin",  icon: "💧", label: "打卡浇水" },
-  { id: "schedule", icon: "🪴", label: "本周花径" },
-  { id: "shopping", icon: "🧺", label: "采购花篮" },
-  { id: "whisper",  icon: "🕊️", label: "秘密花语" },
-  { id: "jokes",    icon: "🌼", label: "笑声花丛" },
-  { id: "calendar", icon: "🍃", label: "花园日历" },
-  { id: "wishes",   icon: "🌟", label: "愿望种子" },
+  { id: "backup",   icon: "🛟", label: "备份" },
+  { id: "fiveYear", icon: "🌳", label: "五年" },
+  { id: "checkin",  icon: "💧", label: "打卡" },
+  { id: "shopping", icon: "🧺", label: "采购" },
+  { id: "whisper",  icon: "🕊️", label: "秘密" },
+  { id: "jokes",    icon: "🌼", label: "笑声" },
+  { id: "crochet",  icon: "🧶", label: "钩织" },
+  { id: "reading",  icon: "📚", label: "阅读" },
+  { id: "games",    icon: "🎮", label: "游戏" },
+  { id: "calendar", icon: "🍃", label: "日历" },
+  { id: "wishes",   icon: "🌟", label: "愿望" },
 ];
 
 const today = () => {
@@ -235,6 +235,21 @@ type FiveYearPhoto = BaseItem & {
 
 type FiveYearPhotosData = Record<string, FiveYearPhoto[]>;
 
+type LongWritingKind = "fiveYearPlan" | "yearPlan" | "yearReview" | "letterSelf" | "letterOther";
+type LongWritingStatus = "draft" | "done";
+
+type LongWritingEntry = BaseItem & {
+  kind: LongWritingKind;
+  date: string;
+  year: string;
+  to: string;
+  title: string;
+  content: string;
+  status: LongWritingStatus;
+};
+
+type LongWritingForm = Omit<LongWritingEntry, keyof BaseItem>;
+
 type ReadingBookStatus = "reading" | "want" | "done";
 
 type ReadingProgressEntry = BaseItem & {
@@ -317,6 +332,7 @@ const BACKUP_STORAGE_ITEMS: BackupStorageItem[] = [
   { key: "couple-diary-success-v1", label: "小成功" },
   { key: "couple-diary-five-year-v1", label: "五年花历" },
   { key: "couple-diary-fiveyear-photos-v1", label: "五年花历照片" },
+  { key: "couple-diary-long-writings-v1", label: "五年计划与信件" },
   { key: "couple-diary-reading-v1", label: "阅读花架" },
   { key: "couple-diary-games-v1", label: "游戏角落" },
   { key: "couple-diary-crochet-v1", label: "钩织花篮" },
@@ -1363,7 +1379,7 @@ function MoodLogTab({ data, setData }: { data: MoodLogEntry[]; setData: Setter<M
           <div style={{ margin: "18px 0 10px", color: COLORS.purple, fontWeight: 900, fontSize: 16 }}>
             {fmtDateWithYear(date)} · {entries.length} 条
           </div>
-          {entries.map((entry) => <MoodCard key={entry.id} entry={entry} />)}
+          {entries.map((entry) => <div key={entry.id}>{MoodCard({ entry })}</div>)}
         </div>
       ))}
     </div>
@@ -2750,7 +2766,7 @@ function CheckinTab({ data, setData }: { data: CheckinEntry[]; setData: Setter<C
             {addingRewardFor === item.id && (
               <div style={{ background: "rgba(255,248,244,.85)", border: `1.5px dashed ${COLORS.yellow}`, borderRadius: 18, padding: "14px 14px", marginBottom: 14 }}>
                 <div style={{ fontWeight: 900, color: COLORS.text, marginBottom: 10 }}>添加奖励 🎁</div>
-                <RewardFields value={rewardForm} setValue={setRewardForm} />
+                {RewardFields({ value: rewardForm, setValue: setRewardForm })}
                 <FormActions onSave={() => saveReward(item.id)} onCancel={() => setAddingRewardFor(null)} saveText="保存奖励" color={COLORS.yellow} />
               </div>
             )}
@@ -2781,7 +2797,7 @@ function CheckinTab({ data, setData }: { data: CheckinEntry[]; setData: Setter<C
                       <div key={reward.id} style={{ background: reward.claimed ? "rgba(232,245,232,.72)" : "rgba(255,255,255,.9)", border: `1px solid ${progress.reached ? "rgba(104,174,126,.28)" : "rgba(240,190,170,.32)"}`, borderRadius: 16, padding: "12px 12px" }}>
                         {editingThisReward ? (
                           <>
-                            <RewardFields value={editRewardForm} setValue={setEditRewardForm} />
+                            {RewardFields({ value: editRewardForm, setValue: setEditRewardForm })}
                             <FormActions onSave={saveRewardEdit} onCancel={() => setEditReward(null)} saveText="保存修改" color={COLORS.yellow} />
                           </>
                         ) : (
@@ -3095,6 +3111,18 @@ function CrochetBasketTab({ data, setData }: { data: CrochetProjectEntry[]; setD
     if (confirmDelete()) setData((prev) => prev.filter((item) => item.id !== id));
   };
 
+  const handleProjectImageUpload = async (fileList: FileList | null, setValue: Setter<CrochetProjectForm>) => {
+    const file = Array.from(fileList || []).find((item) => item.type.startsWith("image/"));
+    if (!file) return;
+    try {
+      const raw = await readFileAsDataUrl(file);
+      const src = await shrinkPhoto(raw, 900, 0.72);
+      setValue((prev) => ({ ...prev, imageUrl: src }));
+    } catch {
+      alert("图片导入失败。可以换一张小一点的图片试试。");
+    }
+  };
+
   const Fields = ({ value, setValue }: { value: CrochetProjectForm; setValue: Setter<CrochetProjectForm> }) => (
     <>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
@@ -3131,22 +3159,47 @@ function CrochetBasketTab({ data, setData }: { data: CrochetProjectEntry[]; setD
         style={{ marginBottom: 10 }}
       />
 
-      <Input
-        type="url"
-        value={value.imageUrl}
-        onChange={(v) => setValue((p) => ({ ...p, imageUrl: v }))}
-        placeholder="图片 URL（可选）：可以放成品参考图 / 图解封面链接"
-        style={{ marginBottom: 10 }}
-      />
+      <div style={{ marginBottom: 10 }}>
+        <label
+          className="diary-btn"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            borderRadius: 999,
+            padding: "8px 18px",
+            fontSize: 14,
+            fontWeight: 800,
+            cursor: "pointer",
+            color: COLORS.purple,
+            border: `1.5px solid ${COLORS.purple}`,
+            background: "transparent",
+          }}
+        >
+          {value.imageUrl ? "重新上传图片" : "上传项目图片"}
+          <input
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              handleProjectImageUpload(e.currentTarget.files, setValue);
+              e.currentTarget.value = "";
+            }}
+          />
+        </label>
+        <span style={{ color: COLORS.muted, fontSize: 13, marginLeft: 8 }}>会自动压缩后保存在本地，不再依赖外链。</span>
+      </div>
 
       {value.imageUrl.trim() && (
         <div style={{ marginBottom: 10, borderRadius: 18, overflow: "hidden", border: "1px solid rgba(161,183,132,.34)", background: COLORS.light }}>
           <img
             src={value.imageUrl.trim()}
             alt="钩织项目预览"
-            style={{ width: "100%", maxHeight: 220, objectFit: "cover" }}
+            style={{ width: "100%", maxHeight: 240, objectFit: "contain" }}
             onError={(e) => { e.currentTarget.style.display = "none"; }}
           />
+          <div style={{ padding: "8px 10px", display: "flex", justifyContent: "flex-end" }}>
+            <Btn small outline color={COLORS.danger} onClick={() => setValue((p) => ({ ...p, imageUrl: "" }))}>移除图片</Btn>
+          </div>
         </div>
       )}
 
@@ -3220,8 +3273,8 @@ function CrochetBasketTab({ data, setData }: { data: CrochetProjectEntry[]; setD
                 </div>
 
                 {item.imageUrl && (
-                  <div style={{ color: COLORS.muted, fontSize: 12, lineHeight: 1.5, wordBreak: "break-all", marginBottom: 6 }}>
-                    图片：{item.imageUrl}
+                  <div style={{ color: COLORS.muted, fontSize: 12, lineHeight: 1.5, marginBottom: 6 }}>
+                    已保存本地压缩图片
                   </div>
                 )}
               </div>
@@ -3292,7 +3345,7 @@ function CrochetBasketTab({ data, setData }: { data: CrochetProjectEntry[]; setD
             钩织花篮 🧶
           </h2>
           <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6, paddingLeft: 12 }}>
-            收纳正在钩和已经收尾的项目：名字、参考图 URL、图解描述都放在一张卡片里。
+            收纳正在钩和已经收尾的项目：名字、本地上传图片、图解描述都放在一张卡片里。
           </div>
         </div>
         <Btn
@@ -3399,6 +3452,401 @@ const shrinkPhoto = (dataUrl: string, maxWidth = 900, quality = 0.72) =>
     img.src = dataUrl;
   });
 
+
+// ─── Five-year planning & letters ────────────────────────────────────────────
+const LONG_WRITING_META: Record<LongWritingKind, {
+  label: string;
+  emoji: string;
+  color: string;
+  help: string;
+  placeholder: string;
+}> = {
+  fiveYearPlan: {
+    label: "五年计划",
+    emoji: "🌳",
+    color: COLORS.purple,
+    help: "写 5 年后的方向，不用写成 KPI。可以写生活、家庭、职业、钱、健康、想成为怎样的人。",
+    placeholder: "比如：五年后的我希望住在哪里、工作是什么状态、家庭怎么运转、我想拥有怎样的身体和心态、哪些东西不再忍了……",
+  },
+  yearPlan: {
+    label: "每年计划",
+    emoji: "🗓️",
+    color: COLORS.blue,
+    help: "写这一年的主题、重点项目、底线和取舍。比日记长，比年度 OKR 更有人味。",
+    placeholder: "今年的主题是……\n我最想推进的 3 件事：\n我想减少/停止的是：\n我需要怎样照顾自己：\n到年底我希望看到的证据：",
+  },
+  yearReview: {
+    label: "年终总结",
+    emoji: "🏵️",
+    color: COLORS.yellow,
+    help: "年底写给自己看的复盘：发生了什么、撑过了什么、学到了什么、下一年不要再怎样。",
+    placeholder: "这一年最重要的事：\n我完成了：\n我扛住了：\n我失望/遗憾的是：\n我感谢自己的地方：\n下一年我想带走什么、放下什么：",
+  },
+  letterSelf: {
+    label: "写给自己",
+    emoji: "💌",
+    color: COLORS.accent,
+    help: "这是完整的信，不是短句记录。可以写给现在的自己、未来的自己、小时候的自己。",
+    placeholder: "亲爱的我：\n\n我想认真跟你说……\n\n这段时间你经历了……\n\n我希望你记得……\n\n爱你的，\n我",
+  },
+  letterOther: {
+    label: "写给别人",
+    emoji: "✉️",
+    color: COLORS.green,
+    help: "可以写真正要发的信，也可以写永远不发的信。重点是完整表达，不压缩成几句。",
+    placeholder: "亲爱的……：\n\n我一直想告诉你……\n\n当时我感受到……\n\n我希望我们……\n\n祝好，\n……",
+  },
+};
+
+const LONG_WRITING_ORDER: LongWritingKind[] = ["fiveYearPlan", "yearPlan", "yearReview", "letterSelf", "letterOther"];
+
+const blankLongWritingForm = (kind: LongWritingKind = "fiveYearPlan"): LongWritingForm => ({
+  kind,
+  date: today(),
+  year: String(new Date().getFullYear()),
+  to: kind === "letterSelf" ? "未来的自己" : "",
+  title: "",
+  content: "",
+  status: "draft",
+});
+
+const getLongWritingMeta = (kind?: LongWritingKind) => LONG_WRITING_META[kind || "fiveYearPlan"] || LONG_WRITING_META.fiveYearPlan;
+
+function LongTermWritingPanel({ data, setData }: { data: LongWritingEntry[]; setData: Setter<LongWritingEntry[]> }) {
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState<LongWritingForm>(blankLongWritingForm());
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<LongWritingForm>(blankLongWritingForm());
+  const [collapsed, setCollapsed] = useState<Record<LongWritingKind, boolean>>({
+    fiveYearPlan: false,
+    yearPlan: false,
+    yearReview: false,
+    letterSelf: false,
+    letterOther: false,
+  });
+
+  const normalized = data.map((item) => ({
+    ...item,
+    kind: (LONG_WRITING_ORDER.includes(item.kind) ? item.kind : "fiveYearPlan") as LongWritingKind,
+    date: item.date || today(),
+    year: item.year || String(new Date().getFullYear()),
+    to: item.to || "",
+    status: item.status === "done" ? "done" : "draft",
+  }));
+
+  const grouped = LONG_WRITING_ORDER.reduce<Record<LongWritingKind, LongWritingEntry[]>>((acc, kind) => {
+    acc[kind] = normalized
+      .filter((item) => item.kind === kind)
+      .sort((a, b) => (b.year || "").localeCompare(a.year || "") || b.createdAt - a.createdAt);
+    return acc;
+  }, { fiveYearPlan: [], yearPlan: [], yearReview: [], letterSelf: [], letterOther: [] });
+
+  const resetAdd = () => {
+    setForm(blankLongWritingForm());
+    setAdding(false);
+  };
+
+  const save = () => {
+    const cleaned: LongWritingForm = {
+      ...form,
+      title: form.title.trim(),
+      content: form.content.trim(),
+      to: form.to.trim(),
+      year: form.year.trim() || String(new Date().getFullYear()),
+      date: form.date || today(),
+      status: form.status || "draft",
+    };
+    if (!cleaned.title && !cleaned.content) return;
+    setData((prev) => [{ id: uid(), createdAt: now(), ...cleaned, title: cleaned.title || getLongWritingMeta(cleaned.kind).label }, ...prev]);
+    resetAdd();
+  };
+
+  const saveEdit = () => {
+    if (!editId) return;
+    const cleaned: LongWritingForm = {
+      ...editForm,
+      title: editForm.title.trim(),
+      content: editForm.content.trim(),
+      to: editForm.to.trim(),
+      year: editForm.year.trim() || String(new Date().getFullYear()),
+      date: editForm.date || today(),
+      status: editForm.status || "draft",
+    };
+    if (!cleaned.title && !cleaned.content) return;
+    setData((prev) =>
+      prev.map((item) => item.id === editId ? { ...item, ...cleaned, title: cleaned.title || getLongWritingMeta(cleaned.kind).label, updatedAt: now() } : item)
+    );
+    setEditId(null);
+  };
+
+  const deleteEntry = (id: string) => {
+    if (!confirmDelete()) return;
+    setData((prev) => prev.filter((item) => item.id !== id));
+    if (editId === id) setEditId(null);
+  };
+
+  const toggleDone = (id: string) => {
+    setData((prev) => prev.map((item) => item.id === id ? { ...item, status: item.status === "done" ? "draft" : "done", updatedAt: now() } : item));
+  };
+
+  const copyContent = async (content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      alert("已复制正文。");
+    } catch {
+      alert("复制失败。可以长按正文手动复制。");
+    }
+  };
+
+  const Fields = ({ value, setValue }: { value: LongWritingForm; setValue: Setter<LongWritingForm> }) => {
+    const meta = getLongWritingMeta(value.kind);
+    const isLetter = value.kind === "letterSelf" || value.kind === "letterOther";
+    return (
+      <>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          {LONG_WRITING_ORDER.map((kind) => {
+            const option = LONG_WRITING_META[kind];
+            const active = value.kind === kind;
+            return (
+              <button
+                key={kind}
+                type="button"
+                onClick={() => setValue((p) => ({ ...p, ...blankLongWritingForm(kind), title: p.title, content: p.content }))}
+                className="diary-btn"
+                style={{
+                  border: active ? `2px solid ${option.color}` : "1.5px solid rgba(232,185,165,.5)",
+                  background: active ? `${option.color}22` : "rgba(255,248,244,.72)",
+                  color: active ? COLORS.text : COLORS.muted,
+                  borderRadius: 999,
+                  padding: "8px 12px",
+                  cursor: "pointer",
+                  fontWeight: active ? 900 : 700,
+                  boxShadow: active ? "0 2px 12px rgba(61,34,24,.10)" : "none",
+                }}
+              >
+                {option.emoji} {option.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ background: `${meta.color}14`, borderRadius: 16, padding: "10px 12px", color: COLORS.muted, fontSize: 13, lineHeight: 1.75, marginBottom: 10 }}>
+          {meta.help}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          <Input
+            type="date"
+            value={value.date}
+            onChange={(v) => setValue((p) => ({ ...p, date: v || today() }))}
+            style={{ width: 180 }}
+          />
+          <Input
+            value={value.year}
+            onChange={(v) => setValue((p) => ({ ...p, year: v }))}
+            placeholder={value.kind === "fiveYearPlan" ? "年份范围，如 2026-2030" : "年份，如 2026"}
+            style={{ width: 220 }}
+          />
+        </div>
+
+        {isLetter && (
+          <Input
+            value={value.to}
+            onChange={(v) => setValue((p) => ({ ...p, to: v }))}
+            placeholder={value.kind === "letterSelf" ? "写给谁：现在的我 / 未来的我 / 小时候的我" : "写给谁：妈妈 / 朋友 / 老公 / 某个不会寄出的人"}
+            style={{ marginBottom: 10 }}
+          />
+        )}
+
+        <Input
+          value={value.title}
+          onChange={(v) => setValue((p) => ({ ...p, title: v }))}
+          placeholder="标题：比如 2026 年计划 / 写给五年后的我 / 给妈妈的一封信"
+          style={{ marginBottom: 10 }}
+        />
+
+        <Input
+          value={value.content}
+          onChange={(v) => setValue((p) => ({ ...p, content: v }))}
+          placeholder={meta.placeholder}
+          multiline
+          rows={10}
+          style={{ marginBottom: 10, lineHeight: 1.75 }}
+        />
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          {(["draft", "done"] as LongWritingStatus[]).map((status) => (
+            <span
+              key={status}
+              onClick={() => setValue((p) => ({ ...p, status }))}
+              style={{
+                padding: "7px 12px",
+                borderRadius: 999,
+                background: value.status === status ? meta.color : COLORS.light,
+                color: value.status === status ? "#fff" : COLORS.muted,
+                cursor: "pointer",
+                fontSize: 14,
+                fontWeight: 900,
+              }}
+            >
+              {status === "draft" ? "草稿" : "完成"}
+            </span>
+          ))}
+        </div>
+      </>
+    );
+  };
+
+  const WritingCard = (entry: LongWritingEntry) => {
+    const meta = getLongWritingMeta(entry.kind);
+    const editing = editId === entry.id;
+    const isLetter = entry.kind === "letterSelf" || entry.kind === "letterOther";
+    return (
+      <Card style={{ borderLeft: `4px solid ${meta.color}` }}>
+        {editing ? (
+          <>
+            {Fields({ value: editForm, setValue: setEditForm })}
+            <FormActions onSave={saveEdit} onCancel={() => setEditId(null)} saveText="保存修改" color={meta.color} />
+          </>
+        ) : (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+              <div style={{ minWidth: 0, flex: "1 1 220px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 5 }}>
+                  <Tag color={`${meta.color}22`} textColor={meta.color}>{meta.emoji} {meta.label}</Tag>
+                  <Tag color={entry.status === "done" ? "#E8F5E8" : COLORS.light} textColor={entry.status === "done" ? COLORS.green : COLORS.muted}>{entry.status === "done" ? "完成" : "草稿"}</Tag>
+                  {entry.year && <Tag>{entry.year}</Tag>}
+                </div>
+                <strong style={{ color: COLORS.text, fontSize: 18, lineHeight: 1.45, wordBreak: "break-word" }}>{entry.title || meta.label}</strong>
+                {isLetter && entry.to && (
+                  <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 700, marginTop: 4 }}>写给：{entry.to}</div>
+                )}
+              </div>
+              <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 700 }}>{fmtFullDate(entry.date)}</div>
+            </div>
+
+            {entry.content && (
+              <div style={{ background: COLORS.light, borderRadius: 16, padding: "12px 14px", color: COLORS.text, fontSize: 15, lineHeight: 1.85, whiteSpace: "pre-wrap", wordBreak: "break-word", marginBottom: 12 }}>
+                {entry.content}
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Btn small outline color={entry.status === "done" ? COLORS.muted : COLORS.green} onClick={() => toggleDone(entry.id)}>
+                  {entry.status === "done" ? "改回草稿" : "标记完成"}
+                </Btn>
+                {entry.content && <Btn small outline color={COLORS.blue} onClick={() => copyContent(entry.content)}>复制正文</Btn>}
+              </div>
+              <ActionButtons
+                onEdit={() => {
+                  setAdding(false);
+                  setEditId(entry.id);
+                  setEditForm({
+                    kind: entry.kind,
+                    date: entry.date || today(),
+                    year: entry.year || String(new Date().getFullYear()),
+                    to: entry.to || "",
+                    title: entry.title || "",
+                    content: entry.content || "",
+                    status: entry.status === "done" ? "done" : "draft",
+                  });
+                }}
+                onDelete={() => deleteEntry(entry.id)}
+              />
+            </div>
+          </>
+        )}
+      </Card>
+    );
+  };
+
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+        <div>
+          <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ display: "inline-flex", width: 4, height: 22, borderRadius: 4, background: COLORS.accent, flexShrink: 0 }} />
+            五年计划与信件 💌
+          </h2>
+          <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6, paddingLeft: 12 }}>
+            这里写长文本：五年计划、每年计划、年终总结、写给自己/别人的完整信。不是一句话打卡，是认真展开。
+          </div>
+        </div>
+        <Btn
+          onClick={() => {
+            if (adding) resetAdd();
+            else {
+              setEditId(null);
+              setForm(blankLongWritingForm());
+              setAdding(true);
+            }
+          }}
+          small
+          color={COLORS.accent}
+        >
+          {adding ? "取消" : "+ 写长文"}
+        </Btn>
+      </div>
+
+      <Card style={{ border: `2px solid ${COLORS.accent}`, background: "linear-gradient(160deg, #FFFFFF 0%, #FFF3F7 100%)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10 }}>
+          {LONG_WRITING_ORDER.map((kind) => {
+            const meta = LONG_WRITING_META[kind];
+            return (
+              <div key={kind} style={{ background: `${meta.color}14`, borderRadius: 18, padding: "12px", textAlign: "center" }}>
+                <div style={{ color: meta.color, fontSize: 25, fontWeight: 900 }}>{grouped[kind].length}</div>
+                <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 800 }}>{meta.label}</div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      {adding && (
+        <Card style={{ border: `2px solid ${COLORS.accent}` }}>
+          {Fields({ value: form, setValue: setForm })}
+          <FormActions onSave={save} onCancel={resetAdd} saveText="保存长文 💌" color={COLORS.accent} />
+        </Card>
+      )}
+
+      {data.length === 0 && !adding && <EmptyState emoji="💌" text="这里还没有五年计划或信件。第一篇可以不用完美，先写给未来的自己。" />}
+
+      {LONG_WRITING_ORDER.map((kind) => {
+        const meta = LONG_WRITING_META[kind];
+        const items = grouped[kind];
+        const isCollapsed = collapsed[kind];
+        if (items.length === 0) return null;
+        return (
+          <div key={kind}>
+            <button
+              type="button"
+              onClick={() => setCollapsed((p) => ({ ...p, [kind]: !p[kind] }))}
+              style={{
+                width: "100%",
+                border: "none",
+                background: "transparent",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                padding: "4px 2px 10px",
+                color: meta.color,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              <span style={{ fontWeight: 900, fontSize: 16 }}>{meta.emoji} {meta.label} · {items.length}</span>
+              <span style={{ color: COLORS.muted, fontSize: 18 }}>{isCollapsed ? "＋" : "－"}</span>
+            </button>
+            {!isCollapsed && items.map((entry) => <div key={entry.id}>{WritingCard(entry)}</div>)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function FiveYearDiaryTab({
   data,
   setData,
@@ -3407,6 +3855,8 @@ function FiveYearDiaryTab({
   successEntries,
   photos,
   setPhotos,
+  longWritings,
+  setLongWritings,
 }: {
   data: FiveYearDiaryData;
   setData: Setter<FiveYearDiaryData>;
@@ -3415,6 +3865,8 @@ function FiveYearDiaryTab({
   successEntries: SuccessEntry[];
   photos: FiveYearPhotosData;
   setPhotos: Setter<FiveYearPhotosData>;
+  longWritings: LongWritingEntry[];
+  setLongWritings: Setter<LongWritingEntry[]>;
 }) {
   const [selectedDate, setSelectedDate] = useState(today());
   const baseYear = new Date().getFullYear();
@@ -3724,6 +4176,8 @@ function FiveYearDiaryTab({
 
   return (
     <div>
+      <LongTermWritingPanel data={longWritings} setData={setLongWritings} />
+
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
         <div>
           <h2 style={{ margin: 0, color: COLORS.text, fontSize: 22, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
@@ -5210,6 +5664,7 @@ export default function CoupleDiary() {
   const [shopping,  setShopping]  = useLocalStorage<ShoppingEntry[]>("couple-diary-shopping-v1",  []);
   const [fiveYearDiary, setFiveYearDiary] = useLocalStorage<FiveYearDiaryData>("couple-diary-five-year-v1", {});
   const [fiveYearPhotos, setFiveYearPhotos] = useLocalStorage<FiveYearPhotosData>("couple-diary-fiveyear-photos-v1", {});
+  const [longWritings, setLongWritings] = useLocalStorage<LongWritingEntry[]>("couple-diary-long-writings-v1", []);
   const [readingBooks, setReadingBooks] = useLocalStorage<ReadingBookEntry[]>("couple-diary-reading-v1", []);
   const [gameEntries, setGameEntries] = useLocalStorage<GameEntry[]>("couple-diary-games-v1", []);
   const [crochetProjects, setCrochetProjects] = useLocalStorage<CrochetProjectEntry[]>("couple-diary-crochet-v1", []);
@@ -5240,6 +5695,7 @@ export default function CoupleDiary() {
     shopping,
     fiveYearDiary,
     fiveYearPhotos,
+    longWritings,
     readingBooks,
     gameEntries,
     crochetProjects,
@@ -5252,7 +5708,7 @@ export default function CoupleDiary() {
       case "diary":    return <DiaryTab    data={diary}        setData={setDiary} />;
       case "moodLog":  return <MoodLogTab data={moodLogEntries} setData={setMoodLogEntries} />;
       case "success":  return <SuccessDiaryTab data={successEntries} setData={setSuccessEntries} />;
-      case "fiveYear": return <FiveYearDiaryTab data={fiveYearDiary} setData={setFiveYearDiary} diary={diary} setDiary={setDiary} successEntries={successEntries} photos={fiveYearPhotos} setPhotos={setFiveYearPhotos} />;
+      case "fiveYear": return <FiveYearDiaryTab data={fiveYearDiary} setData={setFiveYearDiary} diary={diary} setDiary={setDiary} successEntries={successEntries} photos={fiveYearPhotos} setPhotos={setFiveYearPhotos} longWritings={longWritings} setLongWritings={setLongWritings} />;
       case "backup":   return <BackupTab />;
       case "reading":  return <ReadingTab  data={readingBooks} setData={setReadingBooks} />;
       case "games":    return <GameTrackerTab data={gameEntries} setData={setGameEntries} />;
