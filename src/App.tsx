@@ -51,21 +51,21 @@ type TabId =
   | "backup";
 
 const TABS: { id: TabId; icon: string; label: string }[] = [
-  { id: "diary",    icon: "🌸", label: "心情" },
-  { id: "moodLog",  icon: "🌦️", label: "情绪" },
-  { id: "schedule", icon: "🪴", label: "本周" },
+  { id: "diary",    icon: "🌸", label: "心情花笺" },
+  { id: "moodLog",  icon: "🌦️", label: "情绪天气" },
+  { id: "schedule", icon: "🪴", label: "本周花径" },
   { id: "success",  icon: "🌱", label: "小成功" },
-  { id: "backup",   icon: "🛟", label: "备份" },
-  { id: "fiveYear", icon: "🌳", label: "五年" },
-  { id: "checkin",  icon: "💧", label: "打卡" },
-  { id: "shopping", icon: "🧺", label: "采购" },
-  { id: "whisper",  icon: "🕊️", label: "秘密" },
-  { id: "jokes",    icon: "🌼", label: "笑声" },
-  { id: "crochet",  icon: "🧶", label: "钩织" },
-  { id: "reading",  icon: "📚", label: "阅读" },
-  { id: "games",    icon: "🎮", label: "游戏" },
-  { id: "calendar", icon: "🍃", label: "日历" },
-  { id: "wishes",   icon: "🌟", label: "愿望" },
+  { id: "backup",   icon: "🛟", label: "备份保险箱" },
+  { id: "fiveYear", icon: "🌳", label: "五年花历" },
+  { id: "checkin",  icon: "💧", label: "打卡浇水" },
+  { id: "shopping", icon: "🧺", label: "采购花篮" },
+  { id: "whisper",  icon: "🕊️", label: "秘密花语" },
+  { id: "jokes",    icon: "🌼", label: "笑声花丛" },
+  { id: "crochet",  icon: "🧶", label: "钩织花篮" },
+  { id: "reading",  icon: "📚", label: "阅读花架" },
+  { id: "games",    icon: "🎮", label: "游戏角落" },
+  { id: "calendar", icon: "🍃", label: "花园日历" },
+  { id: "wishes",   icon: "🌟", label: "愿望种子" },
 ];
 
 const today = () => {
