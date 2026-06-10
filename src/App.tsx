@@ -252,6 +252,7 @@ type LongWritingEntry = BaseItem & {
   to: string;
   title: string;
   content: string;
+  reviewContent?: string;
   modules?: LongPlanModules;
   status: LongWritingStatus;
 };
@@ -3583,6 +3584,7 @@ const blankLongWritingForm = (kind: LongWritingKind = "fiveYearPlan", defaults: 
     to: defaults.to || (kind === "letterSelf" ? "未来的自己" : ""),
     title: defaults.title || "",
     content: defaults.content || "",
+    reviewContent: defaults.reviewContent || "",
     modules: normalizePlanModules(defaults.modules),
     status: defaults.status || "draft",
   };
@@ -3594,6 +3596,9 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
   const [form, setForm] = useState<LongWritingForm>(blankLongWritingForm("fiveYearPlan", { periodStart: getCurrentFiveYearPeriodStart() }));
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<LongWritingForm>(blankLongWritingForm());
+  const [collapsedYears, setCollapsedYears] = useState<Record<string, boolean>>({});
+  const [collapsedMonths, setCollapsedMonths] = useState<Record<string, boolean>>({});
+  const [fiveYearCollapsed, setFiveYearCollapsed] = useState(false);
 
   const normalized = data.map((item) => {
     const kind = (LONG_WRITING_ORDER.includes(item.kind) ? item.kind : "fiveYearPlan") as LongWritingKind;
@@ -3614,6 +3619,7 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
       to: item.to || "",
       title: item.title || "",
       content: item.content || "",
+      reviewContent: item.reviewContent || "",
       modules: normalizePlanModules(item.modules),
       status: item.status === "done" ? "done" : "draft",
     } as LongWritingEntry;
@@ -3638,7 +3644,7 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
     .sort((a, b) => b.createdAt - a.createdAt);
 
   const fiveYearPlans = periodItems.filter((item) => item.kind === "fiveYearPlan");
-  const fiveYearReviews = periodItems.filter((item) => item.kind === "fiveYearReview");
+  const legacyFiveYearReviews = periodItems.filter((item) => item.kind === "fiveYearReview");
   const letters = normalized
     .filter((item) => LETTER_KINDS.includes(item.kind))
     .sort((a, b) => b.createdAt - a.createdAt);
@@ -3672,13 +3678,14 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
       to: (value.to || "").trim(),
       title: (value.title || "").trim(),
       content: (value.content || "").trim(),
+      reviewContent: (value.reviewContent || "").trim(),
       modules: normalizePlanModules(value.modules),
       status: value.status === "done" ? "done" : "draft",
     };
   };
 
   const hasUsefulContent = (value: LongWritingForm) => {
-    if ((value.title || "").trim() || (value.content || "").trim()) return true;
+    if ((value.title || "").trim() || (value.content || "").trim() || (value.reviewContent || "").trim()) return true;
     return PLAN_MODULES.some((module) => (value.modules?.[module.key] || "").trim());
   };
 
@@ -3722,14 +3729,17 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
     setData((prev) => prev.map((item) => item.id === id ? { ...item, status: item.status === "done" ? "draft" : "done", updatedAt: now() } : item));
   };
 
-  const copyContent = async (entry: LongWritingEntry) => {
+  const copyContent = async (entry: LongWritingEntry, inheritedReview = "") => {
     const moduleText = entry.kind === "yearPlan"
       ? PLAN_MODULES.map((module) => {
           const value = entry.modules?.[module.key]?.trim();
           return value ? `${module.label}\n${value}` : "";
         }).filter(Boolean).join("\n\n")
       : "";
-    const text = [entry.title, moduleText, entry.content].filter(Boolean).join("\n\n");
+    const reviewText = (entry.reviewContent || inheritedReview || "").trim()
+      ? `${entry.kind === "fiveYearPlan" ? "五年总结" : "年终总结"}\n${(entry.reviewContent || inheritedReview || "").trim()}`
+      : "";
+    const text = [entry.title, moduleText, entry.content, reviewText].filter(Boolean).join("\n\n");
     try {
       await navigator.clipboard.writeText(text);
       alert("已复制正文。");
@@ -3741,6 +3751,7 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
   const Fields = ({ value, setValue }: { value: LongWritingForm; setValue: Setter<LongWritingForm> }) => {
     const meta = getLongWritingMeta(value.kind);
     const isLetter = value.kind === "letterSelf" || value.kind === "letterOther";
+    const isFiveYearPlan = value.kind === "fiveYearPlan";
     const isFiveYearDoc = value.kind === "fiveYearPlan" || value.kind === "fiveYearReview";
     const isYearPlan = value.kind === "yearPlan";
     const isMonthPlan = value.kind === "monthPlan";
@@ -3749,7 +3760,11 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
     return (
       <>
         <div style={{ background: `${meta.color}14`, borderRadius: 16, padding: "10px 12px", color: COLORS.muted, fontSize: 13, lineHeight: 1.75, marginBottom: 10 }}>
-          {meta.help}
+          {isFiveYearPlan
+            ? "五年计划是一张大图，五年总结也放在这张图的最下面，周期结束时回来补。"
+            : isYearPlan
+              ? "每年计划按五个模块写，年终总结放在最下面；不是另开一份文档，避免散掉。"
+              : meta.help}
         </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
@@ -3787,7 +3802,7 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
         <Input
           value={value.title}
           onChange={(v) => setValue((p) => ({ ...p, title: v }))}
-          placeholder={isFiveYearDoc ? `标题：比如 ${fiveYearPeriodLabel(value.periodStart || selectedPeriodStart)} 五年计划` : isMonthPlan ? "标题：比如 一月计划 / 春节前计划" : isLetter ? "标题：比如 写给五年后的我" : `标题：比如 ${yearNumber} 年计划`}
+          placeholder={isFiveYearPlan ? `标题：比如 ${fiveYearPeriodLabel(value.periodStart || selectedPeriodStart)} 五年计划` : isMonthPlan ? "标题：比如 一月计划 / 春节前计划" : isLetter ? "标题：比如 写给五年后的我" : `标题：比如 ${yearNumber} 年计划`}
           style={{ marginBottom: 10 }}
         />
 
@@ -3811,11 +3826,37 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
         <Input
           value={value.content}
           onChange={(v) => setValue((p) => ({ ...p, content: v }))}
-          placeholder={isYearPlan ? "补充说明：这一年的主题、底线、取舍、提醒自己的话……（可选）" : meta.placeholder}
+          placeholder={isYearPlan ? "补充说明：这一年的主题、底线、取舍、提醒自己的话……（可选）" : isFiveYearPlan ? LONG_WRITING_META.fiveYearPlan.placeholder : meta.placeholder}
           multiline
           rows={isYearPlan ? 5 : 10}
           style={{ marginBottom: 10, lineHeight: 1.75 }}
         />
+
+        {isFiveYearPlan && (
+          <div style={{ background: "rgba(255,248,234,.72)", borderRadius: 16, padding: "10px 12px", border: "1px solid rgba(221,182,95,.28)", marginBottom: 10 }}>
+            <div style={{ color: COLORS.yellow, fontSize: 15, fontWeight: 900, marginBottom: 7 }}>五年总结（放在五年计划最下面）</div>
+            <Input
+              value={value.reviewContent || ""}
+              onChange={(v) => setValue((p) => ({ ...p, reviewContent: v }))}
+              placeholder={LONG_WRITING_META.fiveYearReview.placeholder}
+              multiline
+              rows={6}
+            />
+          </div>
+        )}
+
+        {isYearPlan && (
+          <div style={{ background: "rgba(244,255,246,.78)", borderRadius: 16, padding: "10px 12px", border: "1px solid rgba(118,169,111,.25)", marginBottom: 10 }}>
+            <div style={{ color: COLORS.green, fontSize: 15, fontWeight: 900, marginBottom: 7 }}>年终总结（放在每年计划最下面）</div>
+            <Input
+              value={value.reviewContent || ""}
+              onChange={(v) => setValue((p) => ({ ...p, reviewContent: v }))}
+              placeholder={LONG_WRITING_META.yearReview.placeholder}
+              multiline
+              rows={6}
+            />
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
           {(["draft", "done"] as LongWritingStatus[]).map((status) => (
@@ -3840,12 +3881,20 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
     );
   };
 
-  const WritingCard = (entry: LongWritingEntry) => {
+  const renderWritingCard = (entry: LongWritingEntry, options: {
+    inheritedReview?: string;
+    collapsible?: boolean;
+    collapsed?: boolean;
+    onToggle?: () => void;
+  } = {}) => {
     const meta = getLongWritingMeta(entry.kind);
     const editing = editId === entry.id;
     const isLetter = entry.kind === "letterSelf" || entry.kind === "letterOther";
     const monthLabel = entry.kind === "monthPlan" && entry.month ? entry.month : "";
     const hasModules = entry.kind === "yearPlan" && PLAN_MODULES.some((module) => entry.modules?.[module.key]?.trim());
+    const reviewContent = (entry.reviewContent || options.inheritedReview || "").trim();
+    const showPlanReview = (entry.kind === "fiveYearPlan" || entry.kind === "yearPlan");
+    const collapsed = !!options.collapsed && !editing;
 
     return (
       <Card style={{ borderLeft: `4px solid ${meta.color}` }}>
@@ -3856,13 +3905,13 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
           </>
         ) : (
           <>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: collapsed ? 0 : 8 }}>
               <div style={{ minWidth: 0, flex: "1 1 220px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 5 }}>
                   <Tag color={`${meta.color}22`} textColor={meta.color}>{meta.emoji} {meta.label}</Tag>
                   <Tag color={entry.status === "done" ? "#E8F5E8" : COLORS.light} textColor={entry.status === "done" ? COLORS.green : COLORS.muted}>{entry.status === "done" ? "完成" : "草稿"}</Tag>
-                  {entry.kind === "fiveYearPlan" || entry.kind === "fiveYearReview" ? <Tag>{fiveYearPeriodLabel(entry.periodStart || selectedPeriodStart)}</Tag> : null}
-                  {entry.kind === "yearPlan" || entry.kind === "yearReview" ? <Tag>{entry.year}</Tag> : null}
+                  {entry.kind === "fiveYearPlan" ? <Tag>{fiveYearPeriodLabel(entry.periodStart || selectedPeriodStart)}</Tag> : null}
+                  {entry.kind === "yearPlan" ? <Tag>{entry.year}</Tag> : null}
                   {monthLabel && <Tag>{monthLabel}</Tag>}
                 </div>
                 <strong style={{ color: COLORS.text, fontSize: 18, lineHeight: 1.45, wordBreak: "break-word" }}>{entry.title || meta.label}</strong>
@@ -3870,57 +3919,76 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
                   <div style={{ color: COLORS.muted, fontSize: 13, fontWeight: 700, marginTop: 4 }}>写给：{entry.to}</div>
                 )}
               </div>
-              <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 700 }}>{fmtFullDate(entry.date)}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 700 }}>{fmtFullDate(entry.date)}</div>
+                {options.collapsible && (
+                  <Btn small outline color={meta.color} onClick={options.onToggle}>{collapsed ? "展开" : "收起"}</Btn>
+                )}
+              </div>
             </div>
 
-            {hasModules && (
-              <div style={{ display: "grid", gap: 9, marginBottom: 12 }}>
-                {PLAN_MODULES.map((module) => {
-                  const value = entry.modules?.[module.key]?.trim();
-                  if (!value) return null;
-                  return (
-                    <div key={module.key} style={{ background: COLORS.light, borderRadius: 14, padding: "10px 12px" }}>
-                      <div style={{ color: COLORS.accent, fontSize: 13, fontWeight: 900, marginBottom: 4 }}>{module.label}</div>
-                      <div style={{ color: COLORS.text, fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{value}</div>
+            {!collapsed && (
+              <>
+                {hasModules && (
+                  <div style={{ display: "grid", gap: 9, marginBottom: 12 }}>
+                    {PLAN_MODULES.map((module) => {
+                      const value = entry.modules?.[module.key]?.trim();
+                      if (!value) return null;
+                      return (
+                        <div key={module.key} style={{ background: COLORS.light, borderRadius: 14, padding: "10px 12px" }}>
+                          <div style={{ color: COLORS.accent, fontSize: 13, fontWeight: 900, marginBottom: 4 }}>{module.label}</div>
+                          <div style={{ color: COLORS.text, fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{value}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {entry.content && (
+                  <div style={{ background: COLORS.light, borderRadius: 16, padding: "12px 14px", color: COLORS.text, fontSize: 15, lineHeight: 1.85, whiteSpace: "pre-wrap", wordBreak: "break-word", marginBottom: 12 }}>
+                    {entry.content}
+                  </div>
+                )}
+
+                {showPlanReview && (
+                  <div style={{ background: entry.kind === "fiveYearPlan" ? "rgba(255,248,220,.68)" : "rgba(244,255,246,.75)", borderRadius: 16, padding: "12px 14px", border: `1px solid ${entry.kind === "fiveYearPlan" ? "rgba(221,182,95,.28)" : "rgba(118,169,111,.24)"}`, color: COLORS.text, fontSize: 15, lineHeight: 1.85, whiteSpace: "pre-wrap", wordBreak: "break-word", marginBottom: 12 }}>
+                    <div style={{ color: entry.kind === "fiveYearPlan" ? COLORS.yellow : COLORS.green, fontSize: 13, fontWeight: 900, marginBottom: reviewContent ? 5 : 0 }}>
+                      {entry.kind === "fiveYearPlan" ? "五年总结" : "年终总结"}
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                    {reviewContent || <span style={{ color: COLORS.muted }}>还没写。点“编辑”，在计划最下面补上。</span>}
+                  </div>
+                )}
 
-            {entry.content && (
-              <div style={{ background: COLORS.light, borderRadius: 16, padding: "12px 14px", color: COLORS.text, fontSize: 15, lineHeight: 1.85, whiteSpace: "pre-wrap", wordBreak: "break-word", marginBottom: 12 }}>
-                {entry.content}
-              </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Btn small outline color={entry.status === "done" ? COLORS.muted : COLORS.green} onClick={() => toggleDone(entry.id)}>
+                      {entry.status === "done" ? "改回草稿" : "标记完成"}
+                    </Btn>
+                    {(entry.content || hasModules || reviewContent) && <Btn small outline color={COLORS.blue} onClick={() => copyContent(entry, options.inheritedReview)}>复制正文</Btn>}
+                  </div>
+                  <ActionButtons
+                    onEdit={() => {
+                      setAdding(false);
+                      setEditId(entry.id);
+                      setEditForm(blankLongWritingForm(entry.kind, {
+                        date: entry.date || today(),
+                        year: entry.year || String(currentPlanningYear()),
+                        month: entry.month,
+                        periodStart: entry.periodStart || selectedPeriodStart,
+                        periodEnd: entry.periodEnd || selectedPeriodStart + 4,
+                        to: entry.to || "",
+                        title: entry.title || "",
+                        content: entry.content || "",
+                        reviewContent: entry.reviewContent || options.inheritedReview || "",
+                        modules: normalizePlanModules(entry.modules),
+                        status: entry.status === "done" ? "done" : "draft",
+                      }));
+                    }}
+                    onDelete={() => deleteEntry(entry.id)}
+                  />
+                </div>
+              </>
             )}
-
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Btn small outline color={entry.status === "done" ? COLORS.muted : COLORS.green} onClick={() => toggleDone(entry.id)}>
-                  {entry.status === "done" ? "改回草稿" : "标记完成"}
-                </Btn>
-                {(entry.content || hasModules) && <Btn small outline color={COLORS.blue} onClick={() => copyContent(entry)}>复制正文</Btn>}
-              </div>
-              <ActionButtons
-                onEdit={() => {
-                  setAdding(false);
-                  setEditId(entry.id);
-                  setEditForm(blankLongWritingForm(entry.kind, {
-                    date: entry.date || today(),
-                    year: entry.year || String(currentPlanningYear()),
-                    month: entry.month,
-                    periodStart: entry.periodStart || selectedPeriodStart,
-                    periodEnd: entry.periodEnd || selectedPeriodStart + 4,
-                    to: entry.to || "",
-                    title: entry.title || "",
-                    content: entry.content || "",
-                    modules: normalizePlanModules(entry.modules),
-                    status: entry.status === "done" ? "done" : "draft",
-                  }));
-                }}
-                onDelete={() => deleteEntry(entry.id)}
-              />
-            </div>
           </>
         )}
       </Card>
@@ -3931,30 +3999,70 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
     <div style={{ color: COLORS.muted, fontSize: 14, lineHeight: 1.7, padding: "8px 2px 14px" }}>{text}</div>
   );
 
-  const YearSection = ({ year }: { year: number }) => {
-    const yearItems = periodItems
-      .filter((item) => coercePlanningYear(item.year || item.month) === year && ["yearPlan", "yearReview", "monthPlan"].includes(item.kind))
-      .sort((a, b) => {
-        if (a.kind === "monthPlan" || b.kind === "monthPlan") return (a.month || "").localeCompare(b.month || "") || b.createdAt - a.createdAt;
-        return b.createdAt - a.createdAt;
-      });
+  const renderYearSection = (year: number) => {
+    const yearKey = String(year);
+    const collapsed = collapsedYears[yearKey] === true;
+    const yearPlans = periodItems
+      .filter((item) => coercePlanningYear(item.year || item.month) === year && item.kind === "yearPlan")
+      .sort((a, b) => b.createdAt - a.createdAt);
+    const legacyYearReviews = periodItems
+      .filter((item) => coercePlanningYear(item.year || item.month) === year && item.kind === "yearReview")
+      .sort((a, b) => b.createdAt - a.createdAt);
+    const monthPlans = periodItems
+      .filter((item) => coercePlanningYear(item.year || item.month) === year && item.kind === "monthPlan")
+      .sort((a, b) => (a.month || "").localeCompare(b.month || "") || b.createdAt - a.createdAt);
+    const inheritedReview = legacyYearReviews.map((item) => item.content || item.reviewContent || "").filter(Boolean).join("\n\n");
+    const hasContent = yearPlans.length > 0 || legacyYearReviews.length > 0 || monthPlans.length > 0;
 
     return (
       <Card style={{ borderLeft: `4px solid ${COLORS.blue}`, background: "linear-gradient(175deg, #FFFFFF 0%, #F7FBFF 100%)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-          <h3 style={{ margin: 0, color: COLORS.text, fontSize: 19, fontWeight: 900 }}>{year}</h3>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: collapsed ? 0 : 10 }}>
+          <h3 style={{ margin: 0, color: COLORS.text, fontSize: 19, fontWeight: 900 }}>{year} 年计划</h3>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Btn small outline color={COLORS.blue} onClick={() => openForm("yearPlan", { year: String(year), periodStart: selectedPeriodStart })}>+ 年计划</Btn>
-            <Btn small outline color={COLORS.green} onClick={() => openForm("yearReview", { year: String(year), periodStart: selectedPeriodStart })}>+ 年终总结</Btn>
+            <Btn small outline color={COLORS.blue} onClick={() => setCollapsedYears((prev) => ({ ...prev, [yearKey]: !collapsed }))}>{collapsed ? "展开" : "收起"}</Btn>
+            <Btn small outline color={COLORS.blue} onClick={() => openForm("yearPlan", { year: String(year), periodStart: selectedPeriodStart, reviewContent: inheritedReview })}>+ 年计划</Btn>
             <Btn small outline color={COLORS.accent} onClick={() => openForm("monthPlan", { year: String(year), month: `${year}-01`, periodStart: selectedPeriodStart })}>+ 月计划</Btn>
           </div>
         </div>
 
-        {yearItems.length === 0 && <SmallEmpty text="这一年还没有计划。先从一个年计划或一个月计划开始就够了。" />}
-        {yearItems.map((entry) => <div key={entry.id}>{WritingCard(entry)}</div>)}
+        {!collapsed && (
+          <>
+            {!hasContent && <SmallEmpty text="这一年还没有计划。先写一个年计划；月计划会放在它下面，年终总结也在年计划最下面补。" />}
+
+            {yearPlans.length === 0 && hasContent && (
+              <SmallEmpty text="这一年还没有年计划主体。已有的年终总结/月计划先挂在这里；建议补一个年计划，之后总结就会收进年计划最下面。" />
+            )}
+
+            {yearPlans.map((entry, index) => (
+              <div key={entry.id}>
+                {renderWritingCard(entry, { inheritedReview: index === 0 ? inheritedReview : "" })}
+              </div>
+            ))}
+
+            {monthPlans.length > 0 && (
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed rgba(121,169,164,.32)" }}>
+                <div style={{ color: COLORS.accent, fontSize: 16, fontWeight: 900, marginBottom: 10 }}>每月计划</div>
+                {monthPlans.map((entry) => {
+                  const monthCollapsed = collapsedMonths[entry.id] === true;
+                  return (
+                    <div key={entry.id} style={{ marginLeft: 0 }}>
+                      {renderWritingCard(entry, {
+                        collapsible: true,
+                        collapsed: monthCollapsed,
+                        onToggle: () => setCollapsedMonths((prev) => ({ ...prev, [entry.id]: !monthCollapsed })),
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
       </Card>
     );
   };
+
+  const inheritedFiveYearReview = legacyFiveYearReviews.map((item) => item.content || item.reviewContent || "").filter(Boolean).join("\n\n");
 
   return (
     <div>
@@ -3965,7 +4073,7 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
             岁月花卷 📜
           </h2>
           <div style={{ marginTop: 5, color: COLORS.muted, fontSize: 13, lineHeight: 1.6, paddingLeft: 12 }}>
-            把五年、每年、每月和那些完整的信分开放。先看远方，再落到今年和这个月。
+            五年总结收在五年计划下面；年终总结收在每年计划下面；月计划挂在对应年份下面，可折叠不占地方。
           </div>
         </div>
       </div>
@@ -4007,19 +4115,27 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
       )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "18px 0 10px" }}>
-        <h3 style={{ margin: 0, color: COLORS.purple, fontSize: 18, fontWeight: 900 }}>{fiveYearPeriodLabel(selectedPeriodStart)} · 五年大图</h3>
+        <h3 style={{ margin: 0, color: COLORS.purple, fontSize: 18, fontWeight: 900 }}>{fiveYearPeriodLabel(selectedPeriodStart)} · 五年计划</h3>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Btn small color={COLORS.purple} onClick={() => openForm("fiveYearPlan", { periodStart: selectedPeriodStart, periodEnd: selectedPeriodEnd, year: fiveYearPeriodLabel(selectedPeriodStart) })}>+ 五年计划</Btn>
-          <Btn small outline color={COLORS.yellow} onClick={() => openForm("fiveYearReview", { periodStart: selectedPeriodStart, periodEnd: selectedPeriodEnd, year: fiveYearPeriodLabel(selectedPeriodStart) })}>+ 5年总结</Btn>
+          <Btn small outline color={COLORS.purple} onClick={() => setFiveYearCollapsed((prev) => !prev)}>{fiveYearCollapsed ? "展开" : "收起"}</Btn>
+          <Btn small color={COLORS.purple} onClick={() => openForm("fiveYearPlan", { periodStart: selectedPeriodStart, periodEnd: selectedPeriodEnd, year: fiveYearPeriodLabel(selectedPeriodStart), reviewContent: inheritedFiveYearReview })}>+ 五年计划</Btn>
         </div>
       </div>
 
-      {fiveYearPlans.length === 0 && fiveYearReviews.length === 0 && <SmallEmpty text="这个 5 年还没有大图。可以先写一个很粗糙的五年计划，以后再改。" />}
-      {fiveYearPlans.map((entry) => <div key={entry.id}>{WritingCard(entry)}</div>)}
-      {fiveYearReviews.map((entry) => <div key={entry.id}>{WritingCard(entry)}</div>)}
+      {!fiveYearCollapsed && (
+        <>
+          {fiveYearPlans.length === 0 && !inheritedFiveYearReview && <SmallEmpty text="这个 5 年还没有大图。写一个五年计划；五年总结以后直接在这份计划最下面补。" />}
+          {fiveYearPlans.length === 0 && inheritedFiveYearReview && <SmallEmpty text="已有旧版五年总结，但还没有五年计划主体。建议补一个五年计划，旧总结会自动带到计划底部。" />}
+          {fiveYearPlans.map((entry, index) => (
+            <div key={entry.id}>
+              {renderWritingCard(entry, { inheritedReview: index === 0 ? inheritedFiveYearReview : "" })}
+            </div>
+          ))}
+        </>
+      )}
 
       <div style={{ margin: "22px 0 10px", color: COLORS.blue, fontSize: 18, fontWeight: 900 }}>每年计划</div>
-      {selectedYears.map((year) => <YearSection key={year} year={year} />)}
+      {selectedYears.map((year) => <div key={year}>{renderYearSection(year)}</div>)}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "24px 0 10px" }}>
         <h3 style={{ margin: 0, color: COLORS.accent, fontSize: 18, fontWeight: 900 }}>信件匣</h3>
@@ -4029,7 +4145,7 @@ function LongTermWritingTab({ data, setData }: { data: LongWritingEntry[]; setDa
         </div>
       </div>
       {letters.length === 0 && <SmallEmpty text="还没有信。可以写给未来的自己，也可以写一封不必发出去的信。" />}
-      {letters.map((entry) => <div key={entry.id}>{WritingCard(entry)}</div>)}
+      {letters.map((entry) => <div key={entry.id}>{renderWritingCard(entry)}</div>)}
     </div>
   );
 }
